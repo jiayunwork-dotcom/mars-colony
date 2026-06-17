@@ -40,24 +40,52 @@ export default function Room() {
     on('room:updated', handleRoomUpdated);
     on('game:started', handleGameStarted);
 
-    fetch(`/api/rooms/${id}`)
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (data) {
-          setRoom(data);
-          const currentPlayer = storedPlayerId ? data.players.find((p: any) => p.id === storedPlayerId) : null;
+    const fetchRoomState = async () => {
+      try {
+        const res = await fetch(`/api/rooms/${id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            setRoom(data);
+            const currentPlayer = storedPlayerId ? data.players.find((p: any) => p.id === storedPlayerId) : null;
+            if (currentPlayer) {
+              setIsHost(currentPlayer.isHost);
+              setIsReady(currentPlayer.isReady);
+            }
+            return;
+          }
+        }
+      } catch (e) {
+        console.log('HTTP fetch failed, trying WebSocket...');
+      }
+
+      emit('room:get-state', { roomId: id, playerId: storedPlayerId || undefined }, (response: any) => {
+        if (response?.success) {
+          setRoom(response.roomState);
+          if (response.playerId) {
+            setPlayerId(response.playerId);
+            localStorage.setItem('playerId', response.playerId);
+          }
+          const currentPlayer = storedPlayerId || response.playerId
+            ? response.roomState.players.find((p: any) => p.id === (storedPlayerId || response.playerId))
+            : null;
           if (currentPlayer) {
             setIsHost(currentPlayer.isHost);
             setIsReady(currentPlayer.isReady);
           }
+        } else {
+          setTimeout(fetchRoomState, 1000);
         }
       });
+    };
+
+    fetchRoomState();
 
     return () => {
       off('room:updated', handleRoomUpdated);
       off('game:started', handleGameStarted);
     };
-  }, [id, connect, on, off, router]);
+  }, [id, connect, on, off, emit, router]);
 
   const handleToggleReady = () => {
     emit('room:ready', { isReady: !isReady });

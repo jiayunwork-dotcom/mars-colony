@@ -17,7 +17,7 @@ import {
   acquireTurnLock,
   releaseTurnLock,
 } from '../db/redis';
-import { saveGame, saveRoom } from '../db/postgres';
+import { saveGame, saveRoom, loadRoom, pool } from '../db/postgres';
 import { DEFAULT_GAME_SETTINGS, PLAYER_COLORS } from '../game/constants';
 
 const rooms: Map<string, {
@@ -351,4 +351,47 @@ export function listRooms(): RoomState[] {
   return Array.from(rooms.values())
     .map(r => r.state)
     .filter(r => r.status === 'lobby');
+}
+
+export async function restoreRoomsFromDB(io: Server): Promise<void> {
+  try {
+    const result = await pool.query('SELECT id, state FROM rooms WHERE state->>\'status\' = \'lobby\'');
+    for (const row of result.rows) {
+      const roomState = row.state as RoomState;
+      if (!rooms.has(roomState.id)) {
+        rooms.set(roomState.id, {
+          state: roomState,
+          gameState: null,
+          turnTimer: null,
+          sockets: new Map(),
+        });
+        console.log(`Restored room: ${roomState.id} - ${roomState.name}`);
+      }
+    }
+    console.log(`Restored ${result.rows.length} rooms from database`);
+  } catch (err) {
+    console.error('Failed to restore rooms from DB:', err);
+  }
+}
+
+export function getRoomStateBySocket(roomId: string, socket: Socket, playerId: string | null): {
+  roomState: RoomState | null;
+  playerId: string | null;
+} {
+  const room = rooms.get(roomId);
+  if (!room) {
+    return { roomState: null, playerId: null };
+  }
+
+  let foundPlayerId = playerId;
+  if (!foundPlayerId) {
+    for (const [pid, sock] of room.sockets.entries()) {
+      if (sock.id === socket.id) {
+        foundPlayerId = pid;
+        break;
+      }
+    }
+  }
+
+  return { roomState: room.state, playerId: foundPlayerId };
 }

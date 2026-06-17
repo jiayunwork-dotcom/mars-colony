@@ -14,6 +14,8 @@ import {
   listRooms,
   getRoomStateHandler,
   getGameStateHandler,
+  restoreRoomsFromDB,
+  getRoomStateBySocket,
 } from './websocket/roomManager';
 import { serializeGameState } from './game/engine';
 
@@ -118,6 +120,20 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('room:get-state', (data: { roomId: string; playerId?: string }, callback) => {
+    const storedPlayerId = socket.data.playerId || data.playerId || null;
+    const result = getRoomStateBySocket(data.roomId, socket, storedPlayerId);
+    if (result.roomState) {
+      callback?.({
+        success: true,
+        roomState: result.roomState,
+        playerId: result.playerId,
+      });
+    } else {
+      callback?.({ success: false, error: 'Room not found' });
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
     handleDisconnect(io, socket);
@@ -129,6 +145,7 @@ const PORT = process.env.PORT || 3001;
 async function startServer() {
   try {
     await initDatabase();
+    await restoreRoomsFromDB(io);
     server.listen(PORT, () => {
       console.log(`Mars Colony Server running on port ${PORT}`);
     });

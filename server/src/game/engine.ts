@@ -5,14 +5,17 @@ import {
   Resources,
   FacilityType,
   HexCoord,
+  HexTile,
   PlayerAction,
   ResourceType,
   ProfessionType,
   ResearchBranch,
+  TerrainType,
 } from '../types/game';
 import {
   DEFAULT_GAME_SETTINGS,
   FACILITY_CONFIG,
+  TERRAIN_CONFIG,
   PLAYER_COLORS,
 } from './constants';
 import { generateMap, getTile, coordKey, setTile, canBuildOn } from './hexGrid';
@@ -135,9 +138,9 @@ export function processTurn(state: GameState): GameState {
 
   const newState = state;
 
+  step3_ProcessActions(newState);
   step1_ResourceProduction(newState);
   step2_ResourceConsumption(newState);
-  step3_ProcessActions(newState);
   step4_Research(newState);
   step5_PopulationChange(newState);
   step6_Disasters(newState);
@@ -159,9 +162,39 @@ function step1_ResourceProduction(state: GameState): void {
   for (const playerId of Object.keys(state.players)) {
     const player = state.players[playerId];
     let totalProduction = createEmptyResources();
+    const playerTiles = Array.from(state.map.tiles.values()).filter(t => t.ownerId === playerId);
 
-    for (const tile of state.map.tiles.values()) {
-      if (tile.ownerId !== playerId) continue;
+    let totalPowerProduction = 0;
+    let totalPowerConsumption = 0;
+    const facilities: Array<{ tile: HexTile; config: any }> = [];
+
+    for (const tile of playerTiles) {
+      if (!tile.facility || tile.facility.isDisabled) continue;
+      const config = FACILITY_CONFIG[tile.facility.type];
+      totalPowerProduction += config.powerProduction || 0;
+      totalPowerConsumption += config.powerConsumption || 0;
+      facilities.push({ tile, config });
+    }
+
+    const sandstorm = state.activeDisasters.find(d => d.type === 'sandstorm');
+    if (sandstorm) {
+      totalPowerProduction = Math.floor(totalPowerProduction * 0.2);
+    }
+
+    const powerRatio = totalPowerConsumption > 0 ? Math.min(1, totalPowerProduction / totalPowerConsumption) : 1;
+
+    for (const { tile, config } of facilities) {
+      const facility = tile.facility!;
+      const terrainConfig = TERRAIN_CONFIG[tile.terrain as TerrainType];
+
+      if (config.powerConsumption > 0 && powerRatio < 1) {
+        facility.isActive = Math.random() < powerRatio;
+      } else {
+        facility.isActive = true;
+      }
+
+      if (!facility.isActive) continue;
+
       const production = calculateFacilityProduction(state, tile, player);
       totalProduction = addResources(totalProduction, production);
     }
@@ -193,29 +226,18 @@ function step2_ResourceConsumption(state: GameState): void {
 }
 
 function distributeResourcesByPriority(player: Player, totalConsumption: Resources): void {
-  const priorities: Array<{ key: keyof Resources; factor: number }> = [
-    { key: 'oxygen', factor: 1 },
-    { key: 'water', factor: 1 },
-    { key: 'food', factor: 1 },
-    { key: 'power', factor: 0.8 },
-    { key: 'materials', factor: 0.5 },
-    { key: 'fuel', factor: 0.3 },
-    { key: 'rare_minerals', factor: 0.1 },
+  const priorityOrder: Array<keyof Resources> = [
+    'oxygen', 'water', 'food', 'power', 'materials', 'fuel', 'rare_minerals'
   ];
 
-  for (const { key } of priorities) {
+  for (const key of priorityOrder) {
     const needed = totalConsumption[key];
     const available = player.resources[key];
 
     if (available >= needed) {
-      player.resources[key] -= needed;
+      player.resources[key] = available - needed;
     } else {
       player.resources[key] = 0;
-      const shortage = needed - available;
-      for (const k of priorities.slice(priorities.findIndex(p => p.key === key) + 1)) {
-        const canTake = Math.min(player.resources[k.key], shortage * k.factor);
-        player.resources[k.key] -= canTake;
-      }
     }
   }
 }

@@ -106,37 +106,6 @@ export function calculateFacilityProduction(
       }
     }
 
-    if (facility.type === 'mining_station') {
-      let totalPowerAvailable = 0;
-      const powerFacilities: Array<{ tile: HexTile; power: number }> = [];
-
-      for (const t of state.map.tiles.values()) {
-        if (t.ownerId !== tile.ownerId || !t.facility) continue;
-        const fc = FACILITY_CONFIG[t.facility.type];
-        if (fc.powerProduction > 0 && !t.facility.isDisabled) {
-          const dist = hexDistance(t.coord, tile.coord);
-          if (dist <= fc.powerRadius) {
-            const terrainMul = t.terrain === 'polar' && t.facility.type === 'solar_array' ? 0.4 : 1;
-            const stormMul = sandstorm && t.facility.type === 'solar_array' ? 0.2 : 1;
-            const power = Math.floor(fc.powerProduction * terrainMul * stormMul);
-            powerFacilities.push({ tile: t, power });
-            totalPowerAvailable += power;
-          }
-        }
-      }
-
-      let totalPowerNeeded = 0;
-      for (const t of state.map.tiles.values()) {
-        if (t.ownerId !== tile.ownerId || !t.facility || t.facility.isDisabled) continue;
-        const fc = FACILITY_CONFIG[t.facility.type];
-        totalPowerNeeded += fc.powerConsumption;
-      }
-
-      if (totalPowerNeeded > 0 && totalPowerAvailable < totalPowerNeeded) {
-        value = Math.floor(value * (totalPowerAvailable / totalPowerNeeded));
-      }
-    }
-
     production[key] = value;
   }
 
@@ -196,13 +165,17 @@ export function validateFacilityPlacement(
   }
   if (tile.facility) return { valid: false, reason: '该地块已有设施' };
 
-  const playerFacilityCount = Array.from(state.map.tiles.values())
-    .filter(t => t.ownerId === playerId && t.facility && t.coord.q === coord.q && t.coord.r === coord.r)
+  const terrainConfig = TERRAIN_CONFIG[tile.terrain];
+  const playerFacilityCountOnSameTerrain = Array.from(state.map.tiles.values())
+    .filter(t =>
+      t.ownerId === playerId &&
+      t.facility &&
+      t.terrain === tile.terrain
+    )
     .length;
 
-  const terrainConfig = TERRAIN_CONFIG[tile.terrain];
-  if (playerFacilityCount >= terrainConfig.maxFacilities) {
-    return { valid: false, reason: `该地形最多只能建${terrainConfig.maxFacilities}个设施` };
+  if (playerFacilityCountOnSameTerrain >= terrainConfig.maxFacilities) {
+    return { valid: false, reason: `${terrainConfig.name}地形最多只能建${terrainConfig.maxFacilities}个设施` };
   }
 
   if (facilityType === 'habitat' || facilityType === 'greenhouse') {
