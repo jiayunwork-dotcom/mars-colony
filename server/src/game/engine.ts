@@ -57,6 +57,10 @@ import {
   cancelTradeOffer,
 } from './scoring';
 
+function deepClone<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 export function createInitialGameState(playerCount: number): GameState {
   const map = generateMap(DEFAULT_GAME_SETTINGS.mapRadius);
   const players: Record<string, Player> = {};
@@ -136,7 +140,7 @@ export function createInitialGameState(playerCount: number): GameState {
 export function processTurn(state: GameState): GameState {
   if (state.phase !== 'playing') return state;
 
-  const newState = state;
+  const newState = deepClone(state);
 
   step1_ResourceProduction(newState);
   step2_ResourceConsumption(newState);

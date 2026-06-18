@@ -28,7 +28,7 @@ const rooms: Map<string, {
   pendingRemoval: Map<string, NodeJS.Timeout>;
 }> = new Map();
 
-const RECONNECT_GRACE_PERIOD = 15000;
+const RECONNECT_GRACE_PERIOD = 5 * 60 * 1000;
 
 export function createRoom(
   io: Server,
