@@ -9,10 +9,13 @@ import {
   HEX_SIZE,
   TERRAIN_CONFIG,
   FACILITY_CONFIG,
+  WARNING_LEVEL_CONFIG,
   hexKey,
   hexToPixel,
   hexCorners,
   getNeighbors,
+  hexDistance,
+  getTilesWithinRadius,
 } from '../lib/gameConfig';
 
 interface HexMapProps {
@@ -21,6 +24,7 @@ interface HexMapProps {
   selectedTile: HexCoord | null;
   onTileSelect: (coord: HexCoord | null) => void;
   buildMode: FacilityType | null;
+  showDefenseOverlay: boolean;
 }
 
 export const HexMap: React.FC<HexMapProps> = ({
@@ -29,6 +33,7 @@ export const HexMap: React.FC<HexMapProps> = ({
   selectedTile,
   onTileSelect,
   buildMode,
+  showDefenseOverlay,
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -37,9 +42,53 @@ export const HexMap: React.FC<HexMapProps> = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const [hoveredTile, setHoveredTile] = useState<string | null>(null);
+  const [pulsePhase, setPulsePhase] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPulsePhase(p => (p + 1) % 60);
+    }, 50);
+    return () => clearInterval(interval);
+  }, []);
 
   const tiles = Object.values(gameState.map.tiles);
   const currentPlayer = gameState.players[playerId];
+
+  const warningTileSet = new Set<string>();
+  const warningLevelMap = new Map<string, string>();
+  for (const w of gameState.disasterWarnings) {
+    const lvl = WARNING_LEVEL_CONFIG[w.warningLevel];
+    for (const coord of w.affectedTiles) {
+      const key = hexKey(coord.q, coord.r);
+      warningTileSet.add(key);
+      const existing = warningLevelMap.get(key);
+      if (!existing || lvl.severity > (WARNING_LEVEL_CONFIG[existing as keyof typeof WARNING_LEVEL_CONFIG]?.severity || 0)) {
+        warningLevelMap.set(key, w.warningLevel);
+      }
+    }
+  }
+
+  const disasterTileSet = new Set<string>();
+  for (const d of gameState.activeDisasters) {
+    for (const coord of d.affectedTiles) {
+      disasterTileSet.add(hexKey(coord.q, coord.r));
+    }
+  }
+
+  const shieldedTileSet = new Set<string>();
+  const shieldRadiusMap = new Map<string, number>();
+  if (showDefenseOverlay) {
+    for (const tile of tiles) {
+      if (tile.facility?.type === 'shield_generator' && !tile.facility.isDisabled && tile.facility.durability > 0) {
+        const radius = FACILITY_CONFIG.shield_generator.shieldRadius || 1;
+        const coveredCoords = getTilesWithinRadius(tile.coord, radius);
+        for (const coord of coveredCoords) {
+          shieldedTileSet.add(hexKey(coord.q, coord.r));
+        }
+        shieldRadiusMap.set(hexKey(tile.coord.q, tile.coord.r), radius);
+      }
+    }
+  }
 
   const canBuildOn = useCallback((tile: HexTile): boolean => {
     if (!buildMode) return false;
@@ -114,6 +163,8 @@ export const HexMap: React.FC<HexMapProps> = ({
     return selectedTile?.q === coord.q && selectedTile?.r === coord.r;
   };
 
+  const pulseOpacity = 0.3 + 0.3 * Math.sin(pulsePhase * Math.PI / 30);
+
   return (
     <div
       ref={containerRef}
@@ -138,6 +189,13 @@ export const HexMap: React.FC<HexMapProps> = ({
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
+          <filter id="warning-glow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
         </defs>
 
         {tiles.map((tile) => {
@@ -147,6 +205,10 @@ export const HexMap: React.FC<HexMapProps> = ({
           const canBuild = canBuildOn(tile);
           const isHovered = hoveredTile === key;
           const selected = isSelected(tile.coord);
+
+          const isWarning = warningTileSet.has(key);
+          const isDisaster = disasterTileSet.has(key);
+          const isShielded = showDefenseOverlay && shieldedTileSet.has(key);
 
           let fillColor = terrainConfig.color;
           let strokeColor = 'rgba(255,255,255,0.1)';
@@ -175,6 +237,9 @@ export const HexMap: React.FC<HexMapProps> = ({
             strokeWidth = 3;
           }
 
+          const warningLevel = warningLevelMap.get(key) as 'yellow' | 'orange' | 'red' | undefined;
+          const warningColor = warningLevel ? WARNING_LEVEL_CONFIG[warningLevel].color : undefined;
+
           return (
             <g
               key={key}
@@ -194,6 +259,35 @@ export const HexMap: React.FC<HexMapProps> = ({
                 strokeWidth={strokeWidth}
                 opacity={tile.ownerId ? 0.95 : 0.7}
               />
+
+              {isWarning && warningColor && (
+                <polygon
+                  points={hexCorners(pixel.x, pixel.y, HEX_SIZE - 2)}
+                  fill={warningColor}
+                  opacity={pulseOpacity}
+                  filter="url(#warning-glow)"
+                  className="warning-flash"
+                />
+              )}
+
+              {isDisaster && (
+                <polygon
+                  points={hexCorners(pixel.x, pixel.y, HEX_SIZE - 2)}
+                  fill="#ff0000"
+                  opacity={0.15}
+                />
+              )}
+
+              {isShielded && (
+                <polygon
+                  points={hexCorners(pixel.x, pixel.y, HEX_SIZE - 2)}
+                  fill="#3b82f6"
+                  opacity={0.15}
+                  stroke="#3b82f6"
+                  strokeWidth={1}
+                  strokeOpacity={0.3}
+                />
+              )}
 
               {tile.facility && (
                 <>
@@ -225,6 +319,26 @@ export const HexMap: React.FC<HexMapProps> = ({
                     >
                       ⚠️
                     </text>
+                  )}
+                  {tile.facility.durability < tile.facility.maxDurability && (
+                    <g>
+                      <rect
+                        x={pixel.x - HEX_SIZE * 0.3}
+                        y={pixel.y + HEX_SIZE * 0.35}
+                        width={HEX_SIZE * 0.6}
+                        height={3}
+                        fill="rgba(0,0,0,0.6)"
+                        rx={1}
+                      />
+                      <rect
+                        x={pixel.x - HEX_SIZE * 0.3}
+                        y={pixel.y + HEX_SIZE * 0.35}
+                        width={HEX_SIZE * 0.6 * (tile.facility.durability / tile.facility.maxDurability)}
+                        height={3}
+                        fill={tile.facility.durability / tile.facility.maxDurability > 0.5 ? '#22c55e' : tile.facility.durability / tile.facility.maxDurability > 0.25 ? '#eab308' : '#ef4444'}
+                        rx={1}
+                      />
+                    </g>
                   )}
                 </>
               )}
@@ -312,6 +426,12 @@ export const HexMap: React.FC<HexMapProps> = ({
             建造模式: {FACILITY_CONFIG[buildMode].icon} {FACILITY_CONFIG[buildMode].name}
           </span>
           <span className="ml-4 text-white/70 text-sm">点击绿色边框地块建造</span>
+        </div>
+      )}
+
+      {showDefenseOverlay && (
+        <div className="absolute top-4 left-4 bg-blue-600/80 px-4 py-1.5 rounded-lg backdrop-blur-sm text-white text-sm">
+          🛡️ 防御覆盖视图
         </div>
       )}
     </div>

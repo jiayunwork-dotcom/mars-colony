@@ -1,4 +1,4 @@
-import { HexCoord, TerrainType, FacilityType, ResourceType, ProfessionType, ResearchBranch, DisasterType } from '../types/game';
+import { HexCoord, TerrainType, FacilityType, ResourceType, ProfessionType, ResearchBranch, DisasterType, WarningLevel } from '../types/game';
 
 export const HEX_SIZE = 35;
 
@@ -56,6 +56,10 @@ export const FACILITY_CONFIG: Record<FacilityType, {
   requiredWorkers: number;
   optimalProfession: ProfessionType;
   researchRequired?: { branch: ResearchBranch; level: number };
+  isDefense?: boolean;
+  shieldRadius?: number;
+  shelterCapacity?: number;
+  baseDurability?: number;
 }> = {
   habitat: {
     name: '居住舱',
@@ -66,6 +70,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     powerConsumption: 5,
     requiredWorkers: 0,
     optimalProfession: 'engineer',
+    baseDurability: 100,
   },
   greenhouse: {
     name: '温室大棚',
@@ -76,6 +81,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     powerConsumption: 8,
     requiredWorkers: 2,
     optimalProfession: 'farmer',
+    baseDurability: 80,
   },
   mining_station: {
     name: '采矿站',
@@ -86,6 +92,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     powerConsumption: 15,
     requiredWorkers: 3,
     optimalProfession: 'miner',
+    baseDurability: 120,
   },
   solar_array: {
     name: '太阳能阵列',
@@ -96,6 +103,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     powerConsumption: 0,
     requiredWorkers: 1,
     optimalProfession: 'engineer',
+    baseDurability: 60,
   },
   nuclear_reactor: {
     name: '核反应堆',
@@ -106,6 +114,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     powerConsumption: 0,
     requiredWorkers: 2,
     optimalProfession: 'engineer',
+    baseDurability: 150,
   },
   water_recycling: {
     name: '水回收厂',
@@ -116,6 +125,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     powerConsumption: 10,
     requiredWorkers: 1,
     optimalProfession: 'scientist',
+    baseDurability: 100,
   },
   launch_pad: {
     name: '发射台',
@@ -126,6 +136,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     powerConsumption: 5,
     requiredWorkers: 2,
     optimalProfession: 'engineer',
+    baseDurability: 100,
   },
   fusion_reactor: {
     name: '核聚变反应堆',
@@ -137,6 +148,45 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     requiredWorkers: 3,
     optimalProfession: 'scientist',
     researchRequired: { branch: 'energy', level: 3 },
+    baseDurability: 200,
+  },
+  shield_generator: {
+    name: '防护罩发生器',
+    icon: '🛡️',
+    description: '保护周围1格范围内建筑不受灾害破坏，消耗大量电力维持',
+    buildCost: { materials: 40, rare_minerals: 10, power: 20 },
+    production: {},
+    powerConsumption: 15,
+    requiredWorkers: 1,
+    optimalProfession: 'engineer',
+    isDefense: true,
+    shieldRadius: 1,
+    baseDurability: 150,
+  },
+  shelter: {
+    name: '避难所',
+    icon: '🏛️',
+    description: '灾害来临时自动转移人口避免死亡，有容量上限',
+    buildCost: { materials: 30, food: 15 },
+    production: {},
+    powerConsumption: 5,
+    requiredWorkers: 0,
+    optimalProfession: 'engineer',
+    isDefense: true,
+    shelterCapacity: 20,
+    baseDurability: 120,
+  },
+  weather_satellite: {
+    name: '气象卫星',
+    icon: '🛰️',
+    description: '提前1回合发现灾害并提升预警精度，可叠加部署增加预警提前量',
+    buildCost: { materials: 35, rare_minerals: 8, fuel: 10 },
+    production: {},
+    powerConsumption: 3,
+    requiredWorkers: 1,
+    optimalProfession: 'scientist',
+    isDefense: true,
+    baseDurability: 80,
   },
 };
 
@@ -247,36 +297,79 @@ export const DISASTER_CONFIG: Record<DisasterType, {
   icon: string;
   color: string;
   description: string;
+  warningDescription: string;
 }> = {
   sandstorm: {
     name: '沙尘暴',
     icon: '🌪️',
     color: '#D2691E',
-    description: '太阳能产出降到20%，户外设施有30%概率损坏',
-  },
-  radiation_storm: {
-    name: '辐射风暴',
-    icon: '☢️',
-    color: '#ADFF2F',
-    description: '殖民者健康-20，非防护设施内的人口有10%死亡概率',
-  },
-  equipment_failure: {
-    name: '设备故障',
-    icon: '🔧',
-    color: '#808080',
-    description: '随机一个设施停产1回合',
-  },
-  plague: {
-    name: '疫病',
-    icon: '🦠',
-    color: '#556B2F',
-    description: '传染到相邻居住舱，病人不工作',
+    description: '大范围低伤害，降低太阳能产出3回合',
+    warningDescription: '检测到大规模沙尘活动，太阳能阵列将受严重影响',
   },
   meteor_impact: {
     name: '陨石撞击',
     icon: '☄️',
     color: '#FF0000',
-    description: '摧毁一个格子及其设施',
+    description: '小范围高伤害，直接摧毁落点建筑',
+    warningDescription: '追踪到陨石轨迹，落点附近建筑面临毁灭性打击',
+  },
+  cold_storm: {
+    name: '极寒风暴',
+    icon: '❄️',
+    color: '#00BFFF',
+    description: '中范围，冻结水资源产出2回合',
+    warningDescription: '极地气旋正在形成，水资源系统将面临冻结风险',
+  },
+  earthquake: {
+    name: '地震',
+    icon: '🌋',
+    color: '#8B0000',
+    description: '线性范围沿断裂带，损坏所有建筑耐久50%',
+    warningDescription: '探测到地壳异常活动，断裂带沿线建筑面临严重损毁',
+  },
+  solar_flare: {
+    name: '太阳耀斑',
+    icon: '☀️',
+    color: '#FFD700',
+    description: '全图范围，损坏电子设备即太阳能阵列和气象卫星',
+    warningDescription: '太阳活动急剧增强，电子设备面临过载损毁风险',
+  },
+  toxic_gas: {
+    name: '有毒气体泄漏',
+    icon: '☠️',
+    color: '#9ACD32',
+    description: '小范围，区域内人口每回合掉血直到建筑温室覆盖该区域',
+    warningDescription: '地下有毒气体正在渗漏，区域内人口健康面临威胁',
+  },
+};
+
+export const WARNING_LEVEL_CONFIG: Record<WarningLevel, {
+  name: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  severity: number;
+}> = {
+  yellow: {
+    name: '黄色预警',
+    color: '#FFD700',
+    bgColor: 'rgba(255, 215, 0, 0.15)',
+    borderColor: '#FFD700',
+    severity: 1,
+  },
+  orange: {
+    name: '橙色预警',
+    color: '#FF8C00',
+    bgColor: 'rgba(255, 140, 0, 0.2)',
+    borderColor: '#FF8C00',
+    severity: 2,
+  },
+  red: {
+    name: '红色预警',
+    color: '#FF0000',
+    bgColor: 'rgba(255, 0, 0, 0.25)',
+    borderColor: '#FF0000',
+    severity: 3,
   },
 };
 
@@ -302,6 +395,16 @@ export function getNeighbors(coord: HexCoord): HexCoord[] {
     { q: 0, r: 1 },
   ];
   return directions.map(d => ({ q: coord.q + d.q, r: coord.r + d.r }));
+}
+
+export function getTilesWithinRadius(center: HexCoord, radius: number): HexCoord[] {
+  const results: HexCoord[] = [];
+  for (let q = -radius; q <= radius; q++) {
+    for (let r = Math.max(-radius, -q - radius); r <= Math.min(radius, -q + radius); r++) {
+      results.push({ q: center.q + q, r: center.r + r });
+    }
+  }
+  return results;
 }
 
 export function hexToPixel(coord: HexCoord, size: number): { x: number; y: number } {

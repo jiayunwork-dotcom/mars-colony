@@ -1,4 +1,4 @@
-import { TerrainType, FacilityType, ResourceType, ProfessionType, ResearchBranch, DisasterType } from '../types/game';
+import { TerrainType, FacilityType, ResourceType, ProfessionType, ResearchBranch, DisasterType, WarningLevel } from '../types/game';
 
 export const HEX_SIZE = 40;
 
@@ -67,6 +67,11 @@ export const FACILITY_CONFIG: Record<FacilityType, {
   capacityBonus?: number;
   description: string;
   researchRequired?: { branch: ResearchBranch; level: number };
+  isDefense?: boolean;
+  shieldRadius?: number;
+  shelterCapacity?: number;
+  baseDurability?: number;
+  satelliteWarningBonus?: number;
 }> = {
   habitat: {
     name: '居住舱',
@@ -82,6 +87,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     optimalProfession: 'engineer',
     capacityBonus: 10,
     description: '提供居住空间，每级+10人口容量',
+    baseDurability: 100,
   },
   greenhouse: {
     name: '温室大棚',
@@ -96,6 +102,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     requiredWorkers: 2,
     optimalProfession: 'farmer',
     description: '消耗水和电力产出食物和氧气，需要水回收厂在2格内满产',
+    baseDurability: 80,
   },
   mining_station: {
     name: '采矿站',
@@ -110,6 +117,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     requiredWorkers: 3,
     optimalProfession: 'miner',
     description: '消耗电力产出建材和稀有矿物，受相邻电力设施供电量限制',
+    baseDurability: 120,
   },
   solar_array: {
     name: '太阳能阵列',
@@ -124,6 +132,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     requiredWorkers: 1,
     optimalProfession: 'engineer',
     description: '利用太阳能发电，沙尘暴时产出降低',
+    baseDurability: 60,
   },
   nuclear_reactor: {
     name: '核反应堆',
@@ -138,6 +147,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     requiredWorkers: 2,
     optimalProfession: 'engineer',
     description: '大量供电，半径1格内不能建居住舱和温室',
+    baseDurability: 150,
   },
   water_recycling: {
     name: '水回收厂',
@@ -152,6 +162,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     requiredWorkers: 1,
     optimalProfession: 'scientist',
     description: '消耗电力产出水，为温室提供生产加成',
+    baseDurability: 100,
   },
   launch_pad: {
     name: '发射台',
@@ -166,6 +177,7 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     requiredWorkers: 2,
     optimalProfession: 'engineer',
     description: '消耗燃料进行贸易，连接地球市场',
+    baseDurability: 100,
   },
   fusion_reactor: {
     name: '核聚变反应堆',
@@ -181,6 +193,58 @@ export const FACILITY_CONFIG: Record<FacilityType, {
     optimalProfession: 'scientist',
     description: '高级能源设施，产电量是普通核反应堆3倍',
     researchRequired: { branch: 'energy', level: 3 },
+    baseDurability: 200,
+  },
+  shield_generator: {
+    name: '防护罩发生器',
+    icon: '🛡️',
+    buildCost: { materials: 40, rare_minerals: 10, power: 20 },
+    maintenance: { power: 15 },
+    production: {},
+    powerConsumption: 15,
+    powerProduction: 0,
+    powerRadius: 0,
+    radiationRadius: 0,
+    requiredWorkers: 1,
+    optimalProfession: 'engineer',
+    description: '保护周围1格范围内建筑不受灾害破坏，消耗大量电力维持',
+    isDefense: true,
+    shieldRadius: 1,
+    baseDurability: 150,
+  },
+  shelter: {
+    name: '避难所',
+    icon: '🏛️',
+    buildCost: { materials: 30, food: 15 },
+    maintenance: { food: 2, oxygen: 1 },
+    production: {},
+    powerConsumption: 5,
+    powerProduction: 0,
+    powerRadius: 0,
+    radiationRadius: 0,
+    requiredWorkers: 0,
+    optimalProfession: 'engineer',
+    description: '灾害来临时自动转移人口避免死亡，有容量上限',
+    isDefense: true,
+    shelterCapacity: 20,
+    baseDurability: 120,
+  },
+  weather_satellite: {
+    name: '气象卫星',
+    icon: '🛰️',
+    buildCost: { materials: 35, rare_minerals: 8, fuel: 10 },
+    maintenance: { fuel: 1 },
+    production: {},
+    powerConsumption: 3,
+    powerProduction: 0,
+    powerRadius: 0,
+    radiationRadius: 0,
+    requiredWorkers: 1,
+    optimalProfession: 'scientist',
+    description: '提前1回合发现灾害并提升预警精度，可叠加部署增加预警提前量',
+    isDefense: true,
+    satelliteWarningBonus: 1,
+    baseDurability: 80,
   },
 };
 
@@ -315,54 +379,109 @@ export const DISASTER_CONFIG: Record<DisasterType, {
   baseProbability: number;
   minDuration: number;
   maxDuration: number;
+  radius: number;
   description: string;
+  warningDescription: string;
 }> = {
   sandstorm: {
     name: '沙尘暴',
     icon: '🌪️',
     color: '#D2691E',
     baseProbability: 0.08,
-    minDuration: 2,
-    maxDuration: 3,
-    description: '太阳能产出降到20%，户外设施有30%概率损坏',
-  },
-  radiation_storm: {
-    name: '辐射风暴',
-    icon: '☢️',
-    color: '#ADFF2F',
-    baseProbability: 0.06,
-    minDuration: 1,
-    maxDuration: 2,
-    description: '殖民者健康-20，非防护设施内的人口有10%死亡概率',
-  },
-  equipment_failure: {
-    name: '设备故障',
-    icon: '🔧',
-    color: '#808080',
-    baseProbability: 0.1,
-    minDuration: 1,
-    maxDuration: 1,
-    description: '随机一个设施停产1回合',
-  },
-  plague: {
-    name: '疫病',
-    icon: '🦠',
-    color: '#556B2F',
-    baseProbability: 0.04,
     minDuration: 3,
-    maxDuration: 5,
-    description: '传染到相邻居住舱，病人不工作',
+    maxDuration: 3,
+    radius: 4,
+    description: '大范围低伤害，降低太阳能产出3回合',
+    warningDescription: '检测到大规模沙尘活动，太阳能阵列将受严重影响',
   },
   meteor_impact: {
     name: '陨石撞击',
     icon: '☄️',
     color: '#FF0000',
-    baseProbability: 0.02,
+    baseProbability: 0.03,
     minDuration: 1,
     maxDuration: 1,
-    description: '摧毁一个格子及其设施',
+    radius: 1,
+    description: '小范围高伤害，直接摧毁落点建筑',
+    warningDescription: '追踪到陨石轨迹，落点附近建筑面临毁灭性打击',
+  },
+  cold_storm: {
+    name: '极寒风暴',
+    icon: '❄️',
+    color: '#00BFFF',
+    baseProbability: 0.06,
+    minDuration: 2,
+    maxDuration: 2,
+    radius: 3,
+    description: '中范围，冻结水资源产出2回合',
+    warningDescription: '极地气旋正在形成，水资源系统将面临冻结风险',
+  },
+  earthquake: {
+    name: '地震',
+    icon: '🌋',
+    color: '#8B0000',
+    baseProbability: 0.04,
+    minDuration: 1,
+    maxDuration: 1,
+    radius: 3,
+    description: '线性范围沿断裂带，损坏所有建筑耐久50%',
+    warningDescription: '探测到地壳异常活动，断裂带沿线建筑面临严重损毁',
+  },
+  solar_flare: {
+    name: '太阳耀斑',
+    icon: '☀️',
+    color: '#FFD700',
+    baseProbability: 0.05,
+    minDuration: 1,
+    maxDuration: 1,
+    radius: 99,
+    description: '全图范围，损坏电子设备即太阳能阵列和气象卫星',
+    warningDescription: '太阳活动急剧增强，电子设备面临过载损毁风险',
+  },
+  toxic_gas: {
+    name: '有毒气体泄漏',
+    icon: '☠️',
+    color: '#9ACD32',
+    baseProbability: 0.04,
+    minDuration: 3,
+    maxDuration: 3,
+    radius: 2,
+    description: '小范围，区域内人口每回合掉血直到建筑温室覆盖该区域',
+    warningDescription: '地下有毒气体正在渗漏，区域内人口健康面临威胁',
   },
 };
+
+export const WARNING_LEVEL_CONFIG: Record<WarningLevel, {
+  name: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  severity: number;
+}> = {
+  yellow: {
+    name: '黄色预警',
+    color: '#FFD700',
+    bgColor: 'rgba(255, 215, 0, 0.15)',
+    borderColor: '#FFD700',
+    severity: 1,
+  },
+  orange: {
+    name: '橙色预警',
+    color: '#FF8C00',
+    bgColor: 'rgba(255, 140, 0, 0.2)',
+    borderColor: '#FF8C00',
+    severity: 2,
+  },
+  red: {
+    name: '红色预警',
+    color: '#FF0000',
+    bgColor: 'rgba(255, 0, 0, 0.25)',
+    borderColor: '#FF0000',
+    severity: 3,
+  },
+};
+
+export const BASE_WARNING_TURNS = 2;
 
 export const PLAYER_COLORS = [
   '#FF6B6B',

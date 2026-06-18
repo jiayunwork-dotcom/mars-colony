@@ -21,9 +21,12 @@ export const BuildMenu: React.FC<BuildMenuProps> = ({
   onBuild,
   onDemolish,
 }) => {
-  const facilityTypes: FacilityType[] = [
+  const productionFacilities: FacilityType[] = [
     'habitat', 'greenhouse', 'mining_station', 'solar_array',
     'nuclear_reactor', 'water_recycling', 'launch_pad', 'fusion_reactor',
+  ];
+  const defenseFacilities: FacilityType[] = [
+    'shield_generator', 'shelter', 'weather_satellite',
   ];
 
   const canAfford = (type: FacilityType, terrain: string): boolean => {
@@ -72,28 +75,53 @@ export const BuildMenu: React.FC<BuildMenuProps> = ({
           </p>
 
           {selectedTileData.facility ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">{FACILITY_CONFIG[selectedTileData.facility.type].icon}</span>
-                <div>
-                  <div className="font-semibold">
-                    {FACILITY_CONFIG[selectedTileData.facility.type].name}
-                    {selectedTileData.facility.isDisabled && (
-                      <span className="ml-2 text-red-400 text-sm">⚠️ 已停用</span>
-                    )}
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    {FACILITY_CONFIG[selectedTileData.facility.type].description}
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">{FACILITY_CONFIG[selectedTileData.facility.type].icon}</span>
+                  <div>
+                    <div className="font-semibold">
+                      {FACILITY_CONFIG[selectedTileData.facility.type].name}
+                      {selectedTileData.facility.isDisabled && (
+                        <span className="ml-2 text-red-400 text-sm">⚠️ 已停用</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {FACILITY_CONFIG[selectedTileData.facility.type].description}
+                    </div>
                   </div>
                 </div>
+                {selectedTileData.ownerId === player.id && (
+                  <button
+                    onClick={() => onDemolish(selectedTileData.coord)}
+                    className="px-3 py-1 bg-red-600 hover:bg-red-500 rounded text-sm"
+                  >
+                    拆除
+                  </button>
+                )}
               </div>
-              {selectedTileData.ownerId === player.id && (
-                <button
-                  onClick={() => onDemolish(selectedTileData.coord)}
-                  className="px-3 py-1 bg-red-600 hover:bg-red-500 rounded text-sm"
-                >
-                  拆除
-                </button>
+              {selectedTileData.facility.durability < selectedTileData.facility.maxDurability && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-gray-400">耐久</span>
+                  <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${(selectedTileData.facility.durability / selectedTileData.facility.maxDurability) * 100}%`,
+                        backgroundColor: selectedTileData.facility.durability / selectedTileData.facility.maxDurability > 0.5 ? '#22c55e' : selectedTileData.facility.durability / selectedTileData.facility.maxDurability > 0.25 ? '#eab308' : '#ef4444',
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {selectedTileData.facility.durability}/{selectedTileData.facility.maxDurability}
+                  </span>
+                </div>
+              )}
+              {selectedTileData.facility.shelterCapacity && (
+                <div className="text-xs text-blue-400 mt-1">🏛️ 避难容量: {selectedTileData.facility.shelterCapacity}人</div>
+              )}
+              {selectedTileData.facility.isDisabled && selectedTileData.facility.disabledTurns > 0 && (
+                <div className="text-xs text-red-400 mt-1">⏳ 停用剩余: {selectedTileData.facility.disabledTurns}回合</div>
               )}
             </div>
           ) : buildMode && selectedTileData.ownerId === player.id ? (
@@ -112,10 +140,9 @@ export const BuildMenu: React.FC<BuildMenuProps> = ({
       )}
 
       <div className="grid grid-cols-2 gap-2">
-        {facilityTypes.map((type) => {
+        {productionFacilities.map((type) => {
           const config = FACILITY_CONFIG[type];
           const unlocked = isTechUnlocked(type);
-          const affordable = selectedTileData ? canAfford(type, selectedTileData.terrain) : true;
           const selected = buildMode === type;
 
           return (
@@ -165,6 +192,61 @@ export const BuildMenu: React.FC<BuildMenuProps> = ({
                     </span>
                   ))}
                 </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <h4 className="text-sm font-bold mt-3 mb-2 text-blue-400">🛡️ 防御设施</h4>
+      <div className="grid grid-cols-1 gap-2">
+        {defenseFacilities.map((type) => {
+          const config = FACILITY_CONFIG[type];
+          const selected = buildMode === type;
+
+          return (
+            <button
+              key={type}
+              onClick={() => onSelectBuild(selected ? null : type)}
+              className={`p-2 rounded-lg text-left transition-all ${
+                selected
+                  ? 'bg-blue-700 border-2 border-blue-400'
+                  : 'bg-gray-800/50 hover:bg-gray-700/50 border-2 border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xl">{config.icon}</span>
+                <span className="font-semibold text-sm">{config.name}</span>
+              </div>
+              <div className="text-xs text-gray-400 mb-1">{config.description}</div>
+              {config.shieldRadius && (
+                <div className="text-xs text-blue-400 mb-0.5">📐 覆盖半径: {config.shieldRadius}格</div>
+              )}
+              {config.shelterCapacity && (
+                <div className="text-xs text-blue-400 mb-0.5">👥 容量: {config.shelterCapacity}人</div>
+              )}
+              {type === 'weather_satellite' && (
+                <div className="text-xs text-blue-400 mb-0.5">📡 预警提前量: +1回合(可叠加)</div>
+              )}
+              {config.baseDurability && (
+                <div className="text-xs text-gray-500 mb-0.5">🛡️ 耐久: {config.baseDurability}</div>
+              )}
+              <div className="flex flex-wrap gap-1">
+                {Object.entries(config.buildCost).map(([res, amt]) => (
+                  <span
+                    key={res}
+                    className="text-xs px-1.5 py-0.5 rounded"
+                    style={{
+                      backgroundColor: 'rgba(0,0,0,0.3)',
+                      color: (RESOURCE_CONFIG as any)[res]?.color || '#fff',
+                    }}
+                  >
+                    {(RESOURCE_CONFIG as any)[res]?.icon} {Math.ceil((amt as number) * (selectedTileData ? TERRAIN_CONFIG[selectedTileData.terrain].buildCostMultiplier : 1))}
+                  </span>
+                ))}
+              </div>
+              {config.powerConsumption > 0 && (
+                <div className="text-xs text-yellow-400 mt-0.5">⚡ 消耗电力: {config.powerConsumption}/回合</div>
               )}
             </button>
           );

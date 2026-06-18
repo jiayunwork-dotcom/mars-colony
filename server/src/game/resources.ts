@@ -91,6 +91,11 @@ export function calculateFacilityProduction(
       value = Math.floor(value * 0.2);
     }
 
+    const coldStorm = state.activeDisasters.find(d => d.type === 'cold_storm');
+    if (coldStorm && key === 'water' && facility.type === 'water_recycling') {
+      value = Math.floor(value * 0.2);
+    }
+
     if (facility.type === 'greenhouse' && key !== 'power') {
       let hasWaterRecycling = false;
       const nearbyTiles = getTilesWithinRadius(tile.coord, 2);

@@ -11,6 +11,7 @@ import {
   ProfessionType,
   ResearchBranch,
   TerrainType,
+  DisasterSettlement,
 } from '../types/game';
 import {
   DEFAULT_GAME_SETTINGS,
@@ -42,11 +43,14 @@ import {
   calculateResearchOutput,
 } from './research';
 import {
-  rollDisasters,
+  rollDisasterWarnings,
   applyDisasterEffects,
   decrementDisasters,
   getActiveDisasterCount,
   advanceSeason,
+  advanceWarnings,
+  convertWarningsToDisasters,
+  addSettlementToHistory,
 } from './disasters';
 import {
   updateAllScores,
@@ -162,6 +166,9 @@ export function createInitialGameState(playerCount: number): GameState {
     players,
     map,
     activeDisasters: [],
+    disasterWarnings: [],
+    disasterHistory: [],
+    pendingSettlement: null,
     pendingTrades: [],
     completedTrades: [],
     turnActions: {},
@@ -178,6 +185,7 @@ export function processTurn(state: GameState): GameState {
   if (state.phase !== 'playing') return state;
 
   const newState = deepClone(state);
+  newState.pendingSettlement = null;
 
   step1_ResourceProduction(newState);
   step2_ResourceConsumption(newState);
@@ -411,6 +419,8 @@ export function buildFacility(
 
   player.resources = subtractResources(player.resources, cost);
 
+  const config = FACILITY_CONFIG[facilityType];
+
   tile.ownerId = playerId;
   tile.facility = {
     type: facilityType,
@@ -419,6 +429,9 @@ export function buildFacility(
     isActive: true,
     isDisabled: false,
     disabledTurns: 0,
+    durability: config.baseDurability || 100,
+    maxDurability: config.baseDurability || 100,
+    shelterCapacity: config.shelterCapacity,
   };
 
   if (facilityType === 'habitat') {
@@ -466,10 +479,63 @@ function step5_PopulationChange(state: GameState): void {
 }
 
 function step6_Disasters(state: GameState): void {
+  advanceWarnings(state);
+
+  const newDisastersFromWarnings = convertWarningsToDisasters(state);
+  state.activeDisasters.push(...newDisastersFromWarnings);
+
   decrementDisasters(state);
-  const newDisasters = rollDisasters(state);
-  state.activeDisasters.push(...newDisasters);
-  applyDisasterEffects(state);
+
+  const newWarnings = rollDisasterWarnings(state);
+  state.disasterWarnings.push(...newWarnings);
+
+  if (state.activeDisasters.length > 0) {
+    const settlements = applyDisasterEffects(state);
+
+    for (const settlement of settlements) {
+      addSettlementToHistory(state, settlement);
+    }
+
+    if (settlements.length > 0) {
+      const mergedSettlement = mergeSettlements(settlements);
+      state.pendingSettlement = mergedSettlement;
+    }
+  }
+}
+
+function mergeSettlements(settlements: DisasterSettlement[]): DisasterSettlement {
+  if (settlements.length === 1) return settlements[0];
+
+  const merged: DisasterSettlement = {
+    id: uuidv4(),
+    disasterType: settlements[0].disasterType,
+    center: settlements[0].center,
+    radius: settlements[0].radius,
+    turn: settlements[0].turn,
+    buildingsDestroyed: [],
+    buildingsDamaged: [],
+    populationCasualties: 0,
+    populationSavedByShelter: 0,
+    resourcesLost: {},
+    productionInterrupted: [],
+    defenseSuccesses: [],
+    shieldedTiles: [],
+  };
+
+  for (const s of settlements) {
+    merged.buildingsDestroyed.push(...s.buildingsDestroyed);
+    merged.buildingsDamaged.push(...s.buildingsDamaged);
+    merged.populationCasualties += s.populationCasualties;
+    merged.populationSavedByShelter += s.populationSavedByShelter;
+    merged.productionInterrupted.push(...s.productionInterrupted);
+    merged.defenseSuccesses.push(...s.defenseSuccesses);
+    merged.shieldedTiles.push(...s.shieldedTiles);
+    for (const [key, val] of Object.entries(s.resourcesLost)) {
+      merged.resourcesLost[key as ResourceType] = (merged.resourcesLost[key as ResourceType] || 0) + (val || 0);
+    }
+  }
+
+  return merged;
 }
 
 function step7_TradeSettlement(state: GameState): void {
@@ -536,11 +602,20 @@ export function serializeGameState(state: GameState): any {
           key,
           {
             ...tile,
+            facility: tile.facility ? {
+              ...tile.facility,
+              durability: tile.facility.durability,
+              maxDurability: tile.facility.maxDurability,
+              shelterCapacity: tile.facility.shelterCapacity,
+            } : null,
           },
         ])
       ),
     },
     activeDisasters: state.activeDisasters,
+    disasterWarnings: state.disasterWarnings,
+    disasterHistory: state.disasterHistory,
+    pendingSettlement: state.pendingSettlement,
     pendingTrades: state.pendingTrades,
     completedTrades: state.completedTrades.slice(-20),
     winner: state.winner,
@@ -564,5 +639,8 @@ export function deserializeGameState(data: any): GameState {
       ...data.map,
       tiles,
     },
+    disasterWarnings: data.disasterWarnings || [],
+    disasterHistory: data.disasterHistory || [],
+    pendingSettlement: data.pendingSettlement || null,
   };
 }

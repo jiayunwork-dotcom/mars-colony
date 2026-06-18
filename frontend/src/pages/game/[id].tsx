@@ -9,7 +9,7 @@ import { ResearchTree } from '../../components/ResearchTree';
 import { TradePanel } from '../../components/TradePanel';
 import { AuctionPanel } from '../../components/AuctionPanel';
 import { ChatPanel } from '../../components/ChatPanel';
-import { DisasterPanel } from '../../components/DisasterPanel';
+import { DefensePanel } from '../../components/DefensePanel';
 import { PopulationPanel } from '../../components/PopulationPanel';
 import type {
   GameState,
@@ -20,8 +20,9 @@ import type {
   ChatMessage,
   PlayerAction,
 } from '../../types/game';
+import { DISASTER_CONFIG, WARNING_LEVEL_CONFIG } from '../../lib/gameConfig';
 
-type TabType = 'build' | 'research' | 'trade' | 'auction' | 'population';
+type TabType = 'build' | 'research' | 'trade' | 'auction' | 'defense' | 'population';
 
 export default function Game() {
   const router = useRouter();
@@ -35,6 +36,8 @@ export default function Game() {
   const [activeTab, setActiveTab] = useState<TabType>('build');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [showEndScreen, setShowEndScreen] = useState(false);
+  const [showDefenseOverlay, setShowDefenseOverlay] = useState(false);
+  const [settlementDismissed, setSettlementDismissed] = useState<string>('');
 
   useEffect(() => {
     if (!id) return;
@@ -174,6 +177,12 @@ export default function Game() {
     router.push('/');
   };
 
+  const handleSettlementClose = useCallback(() => {
+    if (gameState?.pendingSettlement) {
+      setSettlementDismissed(gameState.pendingSettlement.id);
+    }
+  }, [gameState?.pendingSettlement]);
+
   if (!gameState || !currentPlayer) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-mars-950 via-gray-900 to-mars-900 flex items-center justify-center">
@@ -192,9 +201,56 @@ export default function Game() {
     (a, b) => b.score.total - a.score.total
   );
 
+  const showSettlement = gameState.pendingSettlement && gameState.pendingSettlement.id !== settlementDismissed;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-mars-950 via-gray-900 to-mars-900 p-3">
       <div className="max-w-[1920px] mx-auto">
+        {gameState.disasterWarnings.length > 0 && (
+          <div className="mb-2 space-y-1">
+            {gameState.disasterWarnings.map(w => {
+              const disasterConfig = DISASTER_CONFIG[w.disasterType];
+              const warningConfig = WARNING_LEVEL_CONFIG[w.warningLevel];
+              return (
+                <div
+                  key={w.id}
+                  className="rounded-lg px-4 py-2 flex items-center justify-between text-sm backdrop-blur-sm"
+                  style={{
+                    backgroundColor: warningConfig.bgColor,
+                    border: `1px solid ${warningConfig.borderColor}44`,
+                    borderTop: `3px solid ${warningConfig.color}`,
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{disasterConfig.icon}</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold" style={{ color: warningConfig.color }}>
+                          {warningConfig.name}
+                        </span>
+                        <span className="text-white font-semibold">{disasterConfig.name}</span>
+                      </div>
+                      <div className="text-gray-400 text-xs">{disasterConfig.warningDescription}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs">
+                    <div className="text-center">
+                      <div className="font-bold text-lg" style={{ color: warningConfig.color }}>
+                        {w.turnsUntilArrival}
+                      </div>
+                      <div className="text-gray-400">回合后到达</div>
+                    </div>
+                    <div className="text-gray-400">
+                      <div>影响 {w.affectedTiles.length} 格</div>
+                      <div>风险建筑 {w.estimatedLosses.buildingsAtRisk}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div className="mb-3">
           <ResourcePanel player={currentPlayer} />
         </div>
@@ -206,8 +262,6 @@ export default function Game() {
               player={currentPlayer}
               onEndTurn={handleEndTurn}
             />
-
-            <DisasterPanel gameState={gameState} />
 
             <div className="panel rounded-xl p-4">
               <h3 className="text-lg font-bold mb-3 text-mars-400">🏆 排行榜</h3>
@@ -253,6 +307,7 @@ export default function Game() {
                 selectedTile={selectedTile}
                 onTileSelect={setSelectedTile}
                 buildMode={buildMode}
+                showDefenseOverlay={showDefenseOverlay}
               />
             </div>
 
@@ -261,11 +316,18 @@ export default function Game() {
 
           <div className="col-span-3 space-y-3 overflow-y-auto">
             <div className="panel rounded-xl p-2">
-              <div className="grid grid-cols-5 gap-1">
-                {(['build', 'research', 'trade', 'auction', 'population'] as TabType[]).map((tab) => (
+              <div className="grid grid-cols-6 gap-1">
+                {(['build', 'research', 'trade', 'auction', 'defense', 'population'] as TabType[]).map((tab) => (
                   <button
                     key={tab}
-                    onClick={() => setActiveTab(tab)}
+                    onClick={() => {
+                      setActiveTab(tab);
+                      if (tab === 'defense') {
+                        setShowDefenseOverlay(true);
+                      } else {
+                        setShowDefenseOverlay(false);
+                      }
+                    }}
                     className={`py-2 px-1 rounded-lg text-xs font-semibold transition-colors ${
                       activeTab === tab
                         ? 'bg-mars-600 text-white'
@@ -276,6 +338,7 @@ export default function Game() {
                     {tab === 'research' && '🔬 科研'}
                     {tab === 'trade' && '🤝 贸易'}
                     {tab === 'auction' && '🏪 交易所'}
+                    {tab === 'defense' && '🛡️ 防御'}
                     {tab === 'population' && '👥 人口'}
                   </button>
                 ))}
@@ -316,6 +379,14 @@ export default function Game() {
               />
             )}
 
+            {activeTab === 'defense' && (
+              <DefensePanel
+                gameState={gameState}
+                player={currentPlayer}
+                onSettlementClose={handleSettlementClose}
+              />
+            )}
+
             {activeTab === 'population' && (
               <PopulationPanel player={currentPlayer} onRecruit={handleRecruit} />
             )}
@@ -329,6 +400,14 @@ export default function Game() {
           </div>
         </div>
       </div>
+
+      {showSettlement && gameState.pendingSettlement && (
+        <DefensePanel
+          gameState={gameState}
+          player={currentPlayer}
+          onSettlementClose={handleSettlementClose}
+        />
+      )}
 
       {showEndScreen && gameState.phase === 'ended' && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">

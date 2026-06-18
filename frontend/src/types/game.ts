@@ -8,7 +8,10 @@ export type FacilityType =
   | 'nuclear_reactor'
   | 'water_recycling'
   | 'launch_pad'
-  | 'fusion_reactor';
+  | 'fusion_reactor'
+  | 'shield_generator'
+  | 'shelter'
+  | 'weather_satellite';
 
 export type ResourceType =
   | 'oxygen'
@@ -31,10 +34,13 @@ export type ResearchBranch =
 
 export type DisasterType =
   | 'sandstorm'
-  | 'radiation_storm'
-  | 'equipment_failure'
-  | 'plague'
-  | 'meteor_impact';
+  | 'meteor_impact'
+  | 'cold_storm'
+  | 'earthquake'
+  | 'solar_flare'
+  | 'toxic_gas';
+
+export type WarningLevel = 'yellow' | 'orange' | 'red';
 
 export interface HexCoord {
   q: number;
@@ -66,6 +72,9 @@ export interface Facility {
   isActive: boolean;
   isDisabled: boolean;
   disabledTurns: number;
+  durability: number;
+  maxDurability: number;
+  shelterCapacity?: number;
 }
 
 export interface Colonist {
@@ -90,9 +99,69 @@ export interface ResearchProgress {
 }
 
 export interface ActiveDisaster {
+  id: string;
   type: DisasterType;
   turnsRemaining: number;
   affectedTiles: HexCoord[];
+  center: HexCoord;
+  radius: number;
+}
+
+export interface DisasterWarning {
+  id: string;
+  disasterType: DisasterType;
+  warningLevel: WarningLevel;
+  turnsUntilArrival: number;
+  estimatedCenter: HexCoord;
+  estimatedRadius: number;
+  affectedTiles: HexCoord[];
+  estimatedLosses: DisasterEstimate;
+}
+
+export interface DisasterEstimate {
+  buildingsAtRisk: number;
+  populationAtRisk: number;
+  resourceLoss: Partial<Record<ResourceType, number>>;
+}
+
+export interface DisasterSettlement {
+  id: string;
+  disasterType: DisasterType;
+  center: HexCoord;
+  radius: number;
+  turn: number;
+  buildingsDestroyed: Array<{
+    coord: HexCoord;
+    facilityType: FacilityType;
+    ownerId: string;
+  }>;
+  buildingsDamaged: Array<{
+    coord: HexCoord;
+    facilityType: FacilityType;
+    ownerId: string;
+    durabilityLost: number;
+  }>;
+  populationCasualties: number;
+  populationSavedByShelter: number;
+  resourcesLost: Partial<Record<ResourceType, number>>;
+  productionInterrupted: Array<{
+    coord: HexCoord;
+    facilityType: FacilityType;
+    turnsInterrupted: number;
+  }>;
+  defenseSuccesses: Array<{
+    coord: HexCoord;
+    defenseType: FacilityType;
+    damageAbsorbed: number;
+  }>;
+  shieldedTiles: HexCoord[];
+}
+
+export interface DisasterHistoryEntry {
+  turn: number;
+  disasterType: DisasterType;
+  center: HexCoord;
+  settlement: DisasterSettlement;
 }
 
 export interface TradeOffer {
@@ -209,6 +278,9 @@ export interface GameState {
   players: Record<string, Player>;
   map: GameMap;
   activeDisasters: ActiveDisaster[];
+  disasterWarnings: DisasterWarning[];
+  disasterHistory: DisasterHistoryEntry[];
+  pendingSettlement: DisasterSettlement | null;
   pendingTrades: TradeOffer[];
   completedTrades: TradeOffer[];
   turnDeadline: number | null;
