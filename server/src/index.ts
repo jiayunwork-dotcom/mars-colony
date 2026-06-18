@@ -17,6 +17,12 @@ import {
   restoreRoomsFromDB,
   getRoomStateBySocket,
   rejoinRoom,
+  handleCreateOrder,
+  handleCancelOrder,
+  handleFillOrder,
+  handleStartNegotiation,
+  handleMakeNegotiationOffer,
+  handleRespondNegotiation,
 } from './websocket/roomManager';
 import { serializeGameState } from './game/engine';
 
@@ -138,6 +144,47 @@ io.on('connection', (socket) => {
     } else {
       callback?.({ success: false, error: 'Room not found' });
     }
+  });
+
+  socket.on('auction:create-order', (data: {
+    type: any;
+    resourceType: any;
+    quantity: number;
+    priceResource: any;
+    pricePerUnit: number;
+  }, callback) => {
+    handleCreateOrder(io, socket, data, callback);
+  });
+
+  socket.on('auction:cancel-order', (data: { orderId: string }, callback) => {
+    handleCancelOrder(io, socket, data, callback);
+  });
+
+  socket.on('auction:fill-order', (data: { orderId: string; quantity: number }, callback) => {
+    handleFillOrder(io, socket, data, callback);
+  });
+
+  socket.on('auction:start-negotiation', (data: {
+    orderId: string;
+    quantity: number;
+    pricePerUnit: number;
+  }, callback) => {
+    handleStartNegotiation(io, socket, data, callback);
+  });
+
+  socket.on('auction:make-offer', (data: {
+    negotiationId: string;
+    quantity: number;
+    pricePerUnit: number;
+  }, callback) => {
+    handleMakeNegotiationOffer(io, socket, data, callback);
+  });
+
+  socket.on('auction:respond-negotiation', (data: {
+    negotiationId: string;
+    accept: boolean;
+  }, callback) => {
+    handleRespondNegotiation(io, socket, data, callback);
   });
 
   socket.on('disconnect', () => {

@@ -7,6 +7,7 @@ import { TurnTimer } from '../../components/TurnTimer';
 import { BuildMenu } from '../../components/BuildMenu';
 import { ResearchTree } from '../../components/ResearchTree';
 import { TradePanel } from '../../components/TradePanel';
+import { AuctionPanel } from '../../components/AuctionPanel';
 import { ChatPanel } from '../../components/ChatPanel';
 import { DisasterPanel } from '../../components/DisasterPanel';
 import { PopulationPanel } from '../../components/PopulationPanel';
@@ -20,7 +21,7 @@ import type {
   PlayerAction,
 } from '../../types/game';
 
-type TabType = 'build' | 'research' | 'trade' | 'population';
+type TabType = 'build' | 'research' | 'trade' | 'auction' | 'population';
 
 export default function Game() {
   const router = useRouter();
@@ -260,8 +261,8 @@ export default function Game() {
 
           <div className="col-span-3 space-y-3 overflow-y-auto">
             <div className="panel rounded-xl p-2">
-              <div className="grid grid-cols-4 gap-1">
-                {(['build', 'research', 'trade', 'population'] as TabType[]).map((tab) => (
+              <div className="grid grid-cols-5 gap-1">
+                {(['build', 'research', 'trade', 'auction', 'population'] as TabType[]).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -274,6 +275,7 @@ export default function Game() {
                     {tab === 'build' && '🏗️ 建造'}
                     {tab === 'research' && '🔬 科研'}
                     {tab === 'trade' && '🤝 贸易'}
+                    {tab === 'auction' && '🏪 交易所'}
                     {tab === 'population' && '👥 人口'}
                   </button>
                 ))}
@@ -304,6 +306,13 @@ export default function Game() {
                 onAcceptTrade={handleAcceptTrade}
                 onRejectTrade={handleRejectTrade}
                 onCancelTrade={handleCancelTrade}
+              />
+            )}
+
+            {activeTab === 'auction' && (
+              <AuctionPanel
+                gameState={gameState}
+                currentPlayerId={playerId}
               />
             )}
 

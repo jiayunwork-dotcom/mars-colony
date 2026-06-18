@@ -16,14 +16,28 @@ import {
   clearReadyPlayers,
   acquireTurnLock,
   releaseTurnLock,
+  acquireAuctionLock,
+  releaseAuctionLock,
 } from '../db/redis';
-import { saveGame, saveRoom, loadRoom, pool } from '../db/postgres';
+import { saveGame, saveRoom, loadRoom, pool, saveTradeRecord } from '../db/postgres';
 import { DEFAULT_GAME_SETTINGS, PLAYER_COLORS } from '../game/constants';
+import {
+  createOrder,
+  cancelOrder,
+  fillOrder,
+  startNegotiation,
+  makeNegotiationOffer,
+  respondToNegotiation,
+  checkNegotiationTimeouts,
+  checkExpiredOrders,
+} from '../game/auction';
+import { OrderType, ResourceType } from '../types/game';
 
 const rooms: Map<string, {
   state: RoomState;
   gameState: GameState | null;
   turnTimer: NodeJS.Timeout | null;
+  auctionTimer: NodeJS.Timeout | null;
   sockets: Map<string, Socket>;
   pendingRemoval: Map<string, NodeJS.Timeout>;
 }> = new Map();
@@ -67,6 +81,7 @@ export function createRoom(
     state: roomState,
     gameState: null,
     turnTimer: null,
+    auctionTimer: null,
     sockets: new Map([[playerId, socket]]),
     pendingRemoval: new Map(),
   });
@@ -187,6 +202,7 @@ export function startGame(io: Server, socket: Socket): void {
   saveRoom(roomId, room.state);
 
   startTurnTimer(io, roomId);
+  startAuctionTimer(io, roomId);
 }
 
 export function submitAction(
@@ -381,6 +397,7 @@ export async function restoreRoomsFromDB(io: Server): Promise<void> {
           state: roomState,
           gameState: null,
           turnTimer: null,
+          auctionTimer: null,
           sockets: new Map(),
           pendingRemoval: new Map(),
         });
@@ -450,3 +467,300 @@ export function rejoinRoom(
 
   return { success: true };
 }
+
+export function startAuctionTimer(io: Server, roomId: string): void {
+  const room = rooms.get(roomId);
+  if (!room || !room.gameState) return;
+
+  if (room.auctionTimer) {
+    clearInterval(room.auctionTimer);
+  }
+
+  room.auctionTimer = setInterval(() => {
+    if (!room.gameState) return;
+
+    const expiredOrders = checkExpiredOrders(room.gameState);
+    const timedOutNegotiations = checkNegotiationTimeouts(room.gameState);
+
+    if (expiredOrders.length > 0 || timedOutNegotiations.length > 0) {
+      broadcastAuctionUpdate(io, roomId);
+      saveGame(room.gameState.id, serializeGameState(room.gameState));
+    }
+  }, 5000);
+}
+
+export async function handleCreateOrder(
+  io: Server,
+  socket: Socket,
+  data: {
+    type: OrderType;
+    resourceType: ResourceType;
+    quantity: number;
+    priceResource: ResourceType;
+    pricePerUnit: number;
+  },
+  callback?: (result: any) => void
+): Promise<void> {
+  const roomId = socket.data.roomId;
+  const gamePlayerId = socket.data.gamePlayerId;
+  const room = rooms.get(roomId);
+
+  if (!room || !room.gameState || room.state.status !== 'in_game') {
+    callback?.({ success: false, error: '游戏未开始' });
+    return;
+  }
+
+  const lockAcquired = await acquireAuctionLock(roomId, 5000);
+  if (!lockAcquired) {
+    callback?.({ success: false, error: '系统繁忙，请稍后重试' });
+    return;
+  }
+
+  try {
+    const result = createOrder(
+      room.gameState,
+      gamePlayerId,
+      data.type,
+      data.resourceType,
+      data.quantity,
+      data.priceResource,
+      data.pricePerUnit
+    );
+
+    if (result.success) {
+      saveGame(room.gameState.id, serializeGameState(room.gameState));
+      broadcastAuctionUpdate(io, roomId);
+      callback?.({ success: true, order: result.order });
+    } else {
+      callback?.({ success: false, error: result.error });
+    }
+  } finally {
+    await releaseAuctionLock(roomId);
+  }
+}
+
+export async function handleCancelOrder(
+  io: Server,
+  socket: Socket,
+  data: { orderId: string },
+  callback?: (result: any) => void
+): Promise<void> {
+  const roomId = socket.data.roomId;
+  const gamePlayerId = socket.data.gamePlayerId;
+  const room = rooms.get(roomId);
+
+  if (!room || !room.gameState || room.state.status !== 'in_game') {
+    callback?.({ success: false, error: '游戏未开始' });
+    return;
+  }
+
+  const lockAcquired = await acquireAuctionLock(roomId, 5000);
+  if (!lockAcquired) {
+    callback?.({ success: false, error: '系统繁忙，请稍后重试' });
+    return;
+  }
+
+  try {
+    const result = cancelOrder(room.gameState, data.orderId, gamePlayerId);
+
+    if (result.success) {
+      saveGame(room.gameState.id, serializeGameState(room.gameState));
+      broadcastAuctionUpdate(io, roomId);
+      callback?.({ success: true, order: result.order });
+    } else {
+      callback?.({ success: false, error: result.error });
+    }
+  } finally {
+    await releaseAuctionLock(roomId);
+  }
+}
+
+export async function handleFillOrder(
+  io: Server,
+  socket: Socket,
+  data: { orderId: string; quantity: number },
+  callback?: (result: any) => void
+): Promise<void> {
+  const roomId = socket.data.roomId;
+  const gamePlayerId = socket.data.gamePlayerId;
+  const room = rooms.get(roomId);
+
+  if (!room || !room.gameState || room.state.status !== 'in_game') {
+    callback?.({ success: false, error: '游戏未开始' });
+    return;
+  }
+
+  const lockAcquired = await acquireAuctionLock(roomId, 5000);
+  if (!lockAcquired) {
+    callback?.({ success: false, error: '系统繁忙，请稍后重试' });
+    return;
+  }
+
+  try {
+    const result = fillOrder(room.gameState, data.orderId, gamePlayerId, data.quantity);
+
+    if (result.success) {
+      saveGame(room.gameState.id, serializeGameState(room.gameState));
+      saveTradeRecord(room.gameState.id, result.tradeRecord!);
+      broadcastAuctionUpdate(io, roomId);
+      broadcastTradeExecuted(io, roomId, result.tradeRecord!);
+      callback?.({ success: true, tradeRecord: result.tradeRecord });
+    } else {
+      callback?.({ success: false, error: result.error });
+    }
+  } finally {
+    await releaseAuctionLock(roomId);
+  }
+}
+
+export async function handleStartNegotiation(
+  io: Server,
+  socket: Socket,
+  data: { orderId: string; quantity: number; pricePerUnit: number },
+  callback?: (result: any) => void
+): Promise<void> {
+  const roomId = socket.data.roomId;
+  const gamePlayerId = socket.data.gamePlayerId;
+  const room = rooms.get(roomId);
+
+  if (!room || !room.gameState || room.state.status !== 'in_game') {
+    callback?.({ success: false, error: '游戏未开始' });
+    return;
+  }
+
+  const lockAcquired = await acquireAuctionLock(roomId, 5000);
+  if (!lockAcquired) {
+    callback?.({ success: false, error: '系统繁忙，请稍后重试' });
+    return;
+  }
+
+  try {
+    const result = startNegotiation(
+      room.gameState,
+      data.orderId,
+      gamePlayerId,
+      data.quantity,
+      data.pricePerUnit
+    );
+
+    if (result.success) {
+      saveGame(room.gameState.id, serializeGameState(room.gameState));
+      broadcastAuctionUpdate(io, roomId);
+      broadcastNegotiationUpdate(io, roomId, result.negotiation!);
+      callback?.({ success: true, negotiation: result.negotiation });
+    } else {
+      callback?.({ success: false, error: result.error });
+    }
+  } finally {
+    await releaseAuctionLock(roomId);
+  }
+}
+
+export async function handleMakeNegotiationOffer(
+  io: Server,
+  socket: Socket,
+  data: { negotiationId: string; quantity: number; pricePerUnit: number },
+  callback?: (result: any) => void
+): Promise<void> {
+  const roomId = socket.data.roomId;
+  const gamePlayerId = socket.data.gamePlayerId;
+  const room = rooms.get(roomId);
+
+  if (!room || !room.gameState || room.state.status !== 'in_game') {
+    callback?.({ success: false, error: '游戏未开始' });
+    return;
+  }
+
+  const lockAcquired = await acquireAuctionLock(roomId, 5000);
+  if (!lockAcquired) {
+    callback?.({ success: false, error: '系统繁忙，请稍后重试' });
+    return;
+  }
+
+  try {
+    const result = makeNegotiationOffer(
+      room.gameState,
+      data.negotiationId,
+      gamePlayerId,
+      data.quantity,
+      data.pricePerUnit
+    );
+
+    if (result.success) {
+      saveGame(room.gameState.id, serializeGameState(room.gameState));
+      broadcastAuctionUpdate(io, roomId);
+      broadcastNegotiationUpdate(io, roomId, result.negotiation!);
+      callback?.({ success: true, negotiation: result.negotiation });
+    } else {
+      callback?.({ success: false, error: result.error });
+    }
+  } finally {
+    await releaseAuctionLock(roomId);
+  }
+}
+
+export async function handleRespondNegotiation(
+  io: Server,
+  socket: Socket,
+  data: { negotiationId: string; accept: boolean },
+  callback?: (result: any) => void
+): Promise<void> {
+  const roomId = socket.data.roomId;
+  const gamePlayerId = socket.data.gamePlayerId;
+  const room = rooms.get(roomId);
+
+  if (!room || !room.gameState || room.state.status !== 'in_game') {
+    callback?.({ success: false, error: '游戏未开始' });
+    return;
+  }
+
+  const lockAcquired = await acquireAuctionLock(roomId, 5000);
+  if (!lockAcquired) {
+    callback?.({ success: false, error: '系统繁忙，请稍后重试' });
+    return;
+  }
+
+  try {
+    const result = respondToNegotiation(
+      room.gameState,
+      data.negotiationId,
+      gamePlayerId,
+      data.accept
+    );
+
+    if (result.success) {
+      saveGame(room.gameState.id, serializeGameState(room.gameState));
+      broadcastAuctionUpdate(io, roomId);
+      broadcastNegotiationUpdate(io, roomId, result.negotiation!);
+      if (result.tradeRecord) {
+        broadcastTradeExecuted(io, roomId, result.tradeRecord);
+      }
+      callback?.({ success: true, negotiation: result.negotiation, tradeRecord: result.tradeRecord });
+    } else {
+      callback?.({ success: false, error: result.error });
+    }
+  } finally {
+    await releaseAuctionLock(roomId);
+  }
+}
+
+function broadcastAuctionUpdate(io: Server, roomId: string): void {
+  const room = rooms.get(roomId);
+  if (!room || !room.gameState) return;
+
+  io.to(roomId).emit('auction:updated', {
+    orders: room.gameState.orders.filter(o => o.status === 'active'),
+    negotiations: room.gameState.negotiations.filter(n => n.status === 'pending'),
+    tradeHistory: room.gameState.tradeHistory.slice(-50),
+    playerTradeStats: room.gameState.playerTradeStats,
+  });
+}
+
+function broadcastTradeExecuted(io: Server, roomId: string, trade: any): void {
+  io.to(roomId).emit('auction:trade-executed', trade);
+}
+
+function broadcastNegotiationUpdate(io: Server, roomId: string, negotiation: any): void {
+  io.to(roomId).emit('auction:negotiation-updated', negotiation);
+}
+

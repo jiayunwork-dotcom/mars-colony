@@ -42,6 +42,16 @@ export async function releaseTurnLock(roomId: string): Promise<void> {
   await redis.del(`turn_lock:${roomId}`);
 }
 
+export async function acquireAuctionLock(roomId: string, timeout: number = 5000): Promise<boolean> {
+  const key = `auction_lock:${roomId}`;
+  const result = await redis.set(key, '1', 'PX', timeout, 'NX');
+  return result === 'OK';
+}
+
+export async function releaseAuctionLock(roomId: string): Promise<void> {
+  await redis.del(`auction_lock:${roomId}`);
+}
+
 export async function markPlayerReady(roomId: string, playerId: string): Promise<void> {
   await redis.sadd(`ready:${roomId}`, playerId);
 }

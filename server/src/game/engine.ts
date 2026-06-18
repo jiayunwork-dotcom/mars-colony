@@ -56,6 +56,16 @@ import {
   rejectTradeOffer,
   cancelTradeOffer,
 } from './scoring';
+import {
+  createOrder,
+  cancelOrder,
+  fillOrder,
+  startNegotiation,
+  makeNegotiationOffer,
+  respondToNegotiation,
+  checkNegotiationTimeouts,
+  checkExpiredOrders,
+} from './auction';
 
 function deepClone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
@@ -119,6 +129,18 @@ export function createInitialGameState(playerCount: number): GameState {
     };
   }
 
+  const playerTradeStats: Record<string, any> = {};
+  for (const playerId of Object.keys(players)) {
+    playerTradeStats[playerId] = {
+      totalBought: 0,
+      totalSold: 0,
+      totalSpent: {},
+      totalEarned: {},
+      tradeCount: 0,
+      profitLoss: {},
+    };
+  }
+
   return {
     id: uuidv4(),
     currentTurn: 1,
@@ -134,6 +156,10 @@ export function createInitialGameState(playerCount: number): GameState {
     turnActions: {},
     turnDeadline: null,
     winner: null,
+    orders: [],
+    negotiations: [],
+    tradeHistory: [],
+    playerTradeStats,
   };
 }
 
@@ -149,6 +175,7 @@ export function processTurn(state: GameState): GameState {
   step5_PopulationChange(newState);
   step6_Disasters(newState);
   step7_TradeSettlement(newState);
+  step7_5_AuctionCleanup(newState);
   step8_UpdateScores(newState);
 
   newState.currentTurn++;
@@ -320,6 +347,36 @@ function processPlayerAction(state: GameState, playerId: string, action: PlayerA
       }
       break;
     }
+    case 'auction_create_order': {
+      const { type, resourceType, quantity, priceResource, pricePerUnit } = action.payload;
+      createOrder(state, playerId, type, resourceType, quantity, priceResource, pricePerUnit);
+      break;
+    }
+    case 'auction_cancel_order': {
+      const { orderId } = action.payload;
+      cancelOrder(state, orderId, playerId);
+      break;
+    }
+    case 'auction_fill_order': {
+      const { orderId, quantity } = action.payload;
+      fillOrder(state, orderId, playerId, quantity);
+      break;
+    }
+    case 'auction_start_negotiation': {
+      const { orderId, quantity, pricePerUnit } = action.payload;
+      startNegotiation(state, orderId, playerId, quantity, pricePerUnit);
+      break;
+    }
+    case 'auction_negotiation_offer': {
+      const { negotiationId, quantity, pricePerUnit } = action.payload;
+      makeNegotiationOffer(state, negotiationId, playerId, quantity, pricePerUnit);
+      break;
+    }
+    case 'auction_negotiation_response': {
+      const { negotiationId, accept } = action.payload;
+      respondToNegotiation(state, negotiationId, playerId, accept);
+      break;
+    }
   }
 }
 
@@ -415,6 +472,11 @@ function step7_TradeSettlement(state: GameState): void {
   });
 }
 
+function step7_5_AuctionCleanup(state: GameState): void {
+  checkExpiredOrders(state);
+  checkNegotiationTimeouts(state);
+}
+
 function step8_UpdateScores(state: GameState): void {
   updateAllScores(state);
 }
@@ -472,6 +534,10 @@ export function serializeGameState(state: GameState): any {
     completedTrades: state.completedTrades.slice(-20),
     winner: state.winner,
     turnDeadline: state.turnDeadline,
+    orders: state.orders.filter(o => o.status === 'active'),
+    negotiations: state.negotiations.filter(n => n.status === 'pending'),
+    tradeHistory: state.tradeHistory.slice(-50),
+    playerTradeStats: state.playerTradeStats,
   };
 }
 

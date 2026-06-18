@@ -105,6 +105,76 @@ export interface TradeOffer {
   turnCreated: number;
 }
 
+export type OrderType = 'sell' | 'buy';
+export type OrderStatus = 'active' | 'filled' | 'cancelled';
+
+export interface Order {
+  id: string;
+  playerId: string;
+  playerName: string;
+  type: OrderType;
+  resourceType: ResourceType;
+  quantity: number;
+  remainingQuantity: number;
+  priceResource: ResourceType;
+  pricePerUnit: number;
+  status: OrderStatus;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export type NegotiationStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'timeout';
+
+export interface NegotiationOffer {
+  playerId: string;
+  playerName: string;
+  quantity: number;
+  pricePerUnit: number;
+  timestamp: number;
+}
+
+export interface Negotiation {
+  id: string;
+  orderId: string;
+  initiatorPlayerId: string;
+  initiatorPlayerName: string;
+  targetPlayerId: string;
+  targetPlayerName: string;
+  resourceType: ResourceType;
+  priceResource: ResourceType;
+  offers: NegotiationOffer[];
+  currentRound: number;
+  maxRounds: number;
+  status: NegotiationStatus;
+  createdAt: number;
+  expiresAt: number;
+  lastActionAt: number;
+}
+
+export interface TradeRecord {
+  id: string;
+  buyerPlayerId: string;
+  buyerPlayerName: string;
+  sellerPlayerId: string;
+  sellerPlayerName: string;
+  resourceType: ResourceType;
+  quantity: number;
+  priceResource: ResourceType;
+  pricePerUnit: number;
+  totalPrice: number;
+  timestamp: number;
+  orderId?: string;
+}
+
+export interface PlayerTradeStats {
+  totalBought: number;
+  totalSold: number;
+  totalSpent: Partial<Resources>;
+  totalEarned: Partial<Resources>;
+  tradeCount: number;
+  profitLoss: Partial<Resources>;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -143,6 +213,10 @@ export interface GameState {
   completedTrades: TradeOffer[];
   turnDeadline: number | null;
   winner: string | null;
+  orders: Order[];
+  negotiations: Negotiation[];
+  tradeHistory: TradeRecord[];
+  playerTradeStats: Record<string, PlayerTradeStats>;
 }
 
 export interface PlayerAction {
@@ -155,7 +229,13 @@ export interface PlayerAction {
     | 'research'
     | 'trade_offer'
     | 'trade_response'
-    | 'chat';
+    | 'chat'
+    | 'auction_create_order'
+    | 'auction_cancel_order'
+    | 'auction_fill_order'
+    | 'auction_start_negotiation'
+    | 'auction_negotiation_offer'
+    | 'auction_negotiation_response';
   payload: any;
 }
 
