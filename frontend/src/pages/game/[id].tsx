@@ -9,7 +9,7 @@ import { ResearchTree } from '../../components/ResearchTree';
 import { TradePanel } from '../../components/TradePanel';
 import { AuctionPanel } from '../../components/AuctionPanel';
 import { ChatPanel } from '../../components/ChatPanel';
-import { DefensePanel } from '../../components/DefensePanel';
+import { DefensePanel, SettlementModal } from '../../components/DefensePanel';
 import { PopulationPanel } from '../../components/PopulationPanel';
 import type {
   GameState,
@@ -402,10 +402,9 @@ export default function Game() {
       </div>
 
       {showSettlement && gameState.pendingSettlement && (
-        <DefensePanel
-          gameState={gameState}
-          player={currentPlayer}
-          onSettlementClose={handleSettlementClose}
+        <SettlementModal
+          settlement={gameState.pendingSettlement}
+          onClose={handleSettlementClose}
         />
       )}
 

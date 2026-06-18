@@ -44,13 +44,14 @@ import {
 } from './research';
 import {
   rollDisasterWarnings,
-  applyDisasterEffects,
   decrementDisasters,
   getActiveDisasterCount,
   advanceSeason,
-  advanceWarnings,
-  convertWarningsToDisasters,
+  advanceWarningsAndCollectArrived,
+  convertArrivedWarningsToDisasters,
   addSettlementToHistory,
+  processOngoingDisasterEffects,
+  applyTriggeredDisasterEffects,
 } from './disasters';
 import {
   updateAllScores,
@@ -479,28 +480,33 @@ function step5_PopulationChange(state: GameState): void {
 }
 
 function step6_Disasters(state: GameState): void {
-  advanceWarnings(state);
+  // 1. 推进预警倒计时，收集到达的预警（同时从列表移除）
+  const arrivedWarnings = advanceWarningsAndCollectArrived(state);
 
-  const newDisastersFromWarnings = convertWarningsToDisasters(state);
-  state.activeDisasters.push(...newDisastersFromWarnings);
+  // 2. 将到达预警转化为 ActiveDisaster（新触发的灾害）
+  const newlyTriggeredDisasters = convertArrivedWarningsToDisasters(state, arrivedWarnings);
+  state.activeDisasters.push(...newlyTriggeredDisasters);
 
-  decrementDisasters(state);
-
-  const newWarnings = rollDisasterWarnings(state);
-  state.disasterWarnings.push(...newWarnings);
-
-  if (state.activeDisasters.length > 0) {
-    const settlements = applyDisasterEffects(state);
-
+  // 3. 对本回合新触发的灾害应用一次性影响（建筑摧毁、人口伤亡等）并生成结算
+  if (newlyTriggeredDisasters.length > 0) {
+    const settlements = applyTriggeredDisasterEffects(state, newlyTriggeredDisasters);
     for (const settlement of settlements) {
       addSettlementToHistory(state, settlement);
     }
-
     if (settlements.length > 0) {
-      const mergedSettlement = mergeSettlements(settlements);
-      state.pendingSettlement = mergedSettlement;
+      state.pendingSettlement = mergeSettlements(settlements);
     }
   }
+
+  // 4. 处理持续灾害的每回合效果（如有毒气体每回合掉血）
+  processOngoingDisasterEffects(state);
+
+  // 5. 推进 active 灾害的剩余回合数，处理结束
+  decrementDisasters(state);
+
+  // 6. 生成新的灾害预警
+  const newWarnings = rollDisasterWarnings(state);
+  state.disasterWarnings.push(...newWarnings);
 }
 
 function mergeSettlements(settlements: DisasterSettlement[]): DisasterSettlement {

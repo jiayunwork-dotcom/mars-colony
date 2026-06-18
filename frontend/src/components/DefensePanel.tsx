@@ -203,7 +203,7 @@ interface SettlementModalProps {
   onClose: () => void;
 }
 
-const SettlementModal: React.FC<SettlementModalProps> = ({ settlement, onClose }) => {
+export const SettlementModal: React.FC<SettlementModalProps> = ({ settlement, onClose }) => {
   const config = DISASTER_CONFIG[settlement.disasterType];
 
   return (

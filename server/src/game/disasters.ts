@@ -200,25 +200,27 @@ function getEarthquakeLineTiles(state: GameState, center: HexCoord): HexCoord[] 
   return tiles;
 }
 
-export function advanceWarnings(state: GameState): void {
+export function advanceWarningsAndCollectArrived(state: GameState): DisasterWarning[] {
+  const arrived: DisasterWarning[] = [];
   state.disasterWarnings = state.disasterWarnings.filter(w => {
     w.turnsUntilArrival--;
     w.warningLevel = getWarningLevel(w.turnsUntilArrival);
-    return w.turnsUntilArrival > 0;
+    if (w.turnsUntilArrival <= 0) {
+      arrived.push(w);
+      return false;
+    }
+    return true;
   });
+  return arrived;
 }
 
-export function convertWarningsToDisasters(state: GameState): ActiveDisaster[] {
+export function convertArrivedWarningsToDisasters(
+  state: GameState,
+  arrivedWarnings: DisasterWarning[]
+): ActiveDisaster[] {
   const newDisasters: ActiveDisaster[] = [];
-  const triggered: DisasterWarning[] = [];
 
-  for (const warning of state.disasterWarnings) {
-    if (warning.turnsUntilArrival <= 0) {
-      triggered.push(warning);
-    }
-  }
-
-  for (const warning of triggered) {
+  for (const warning of arrivedWarnings) {
     const config = DISASTER_CONFIG[warning.disasterType];
     const duration = Math.floor(
       Math.random() * (config.maxDuration - config.minDuration + 1)
@@ -239,22 +241,44 @@ export function convertWarningsToDisasters(state: GameState): ActiveDisaster[] {
     });
   }
 
-  state.disasterWarnings = state.disasterWarnings.filter(
-    w => w.turnsUntilArrival > 0
-  );
-
   return newDisasters;
 }
 
-export function applyDisasterEffects(state: GameState): DisasterSettlement[] {
+export function applyTriggeredDisasterEffects(
+  state: GameState,
+  triggeredDisasters: ActiveDisaster[]
+): DisasterSettlement[] {
   const settlements: DisasterSettlement[] = [];
-
-  for (const disaster of state.activeDisasters) {
+  for (const disaster of triggeredDisasters) {
     const settlement = applySingleDisaster(state, disaster);
     settlements.push(settlement);
   }
-
   return settlements;
+}
+
+export function processOngoingDisasterEffects(state: GameState): void {
+  for (const disaster of state.activeDisasters) {
+    if (disaster.type === 'toxic_gas') {
+      for (const coord of disaster.affectedTiles) {
+        const tile = state.map.tiles.get(coordKey(coord));
+        if (!tile || !tile.ownerId) continue;
+        if (isTileShielded(state, coord)) continue;
+        if (isTileGreenhouseCovered(state, coord)) continue;
+
+        const player = state.players[tile.ownerId];
+        if (!player) continue;
+
+        const casualties = killUnprotectedPopulation(state, player, coord, 0.2);
+        if (casualties.killed > 0 && tile.facility) {
+          const damage = Math.floor(tile.facility.maxDurability * 0.05);
+          tile.facility.durability = Math.max(0, tile.facility.durability - damage);
+          if (tile.facility.durability <= 0) {
+            removeFacility(state, coord, tile);
+          }
+        }
+      }
+    }
+  }
 }
 
 function applySingleDisaster(state: GameState, disaster: ActiveDisaster): DisasterSettlement {
