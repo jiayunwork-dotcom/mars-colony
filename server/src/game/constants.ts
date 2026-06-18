@@ -379,7 +379,7 @@ export const DEFAULT_GAME_SETTINGS = {
   mapRadius: 5,
   maxTurns: 50,
   turnTimeout: 30000,
-  minPlayers: 1,
+  minPlayers: 4,
   maxPlayers: 8,
 };
 

@@ -164,7 +164,7 @@ export function startGame(io: Server, socket: Socket): void {
 
   if (!room || room.state.hostId !== playerId) return;
 
-  const readyPlayers = room.state.players.filter(p => p.isReady || p.isHost);
+  const readyPlayers = room.state.players.filter(p => p.isReady);
   if (readyPlayers.length < DEFAULT_GAME_SETTINGS.minPlayers) {
     socket.emit('error', `至少需要 ${DEFAULT_GAME_SETTINGS.minPlayers} 名玩家准备就绪`);
     return;

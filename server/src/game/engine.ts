@@ -68,7 +68,18 @@ import {
 } from './auction';
 
 function deepClone<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj));
+  if (typeof structuredClone === 'function') {
+    return structuredClone(obj);
+  }
+  const cloned: any = JSON.parse(JSON.stringify(obj));
+  if (cloned && cloned.map && cloned.map.tiles && !(cloned.map.tiles instanceof Map)) {
+    const tiles = new Map<string, any>();
+    for (const [key, tile] of Object.entries(cloned.map.tiles)) {
+      tiles.set(key, tile);
+    }
+    cloned.map.tiles = tiles;
+  }
+  return cloned;
 }
 
 export function createInitialGameState(playerCount: number): GameState {

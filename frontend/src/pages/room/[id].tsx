@@ -118,7 +118,8 @@ export default function Room() {
     );
   }
 
-  const readyCount = room.players.filter(p => p.isReady || p.isHost).length;
+  const readyCount = room.players.filter(p => p.isReady).length;
+  const minPlayers = 4;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-mars-950 via-gray-900 to-mars-900 p-4">
@@ -193,27 +194,26 @@ export default function Room() {
             ))}
           </div>
 
-          <div className="flex gap-4 justify-center">
-            {!isHost ? (
-              <button
-                onClick={handleToggleReady}
-                disabled={gameStarting}
-                className={`px-8 py-3 rounded-lg font-bold text-lg transition-all ${
-                  isReady
-                    ? 'bg-green-600 hover:bg-green-500 text-white'
-                    : 'btn-primary'
-                } disabled:opacity-50`}
-              >
-                {isReady ? '✓ 已准备就绪' : '准备就绪'}
-              </button>
-            ) : (
+          <div className="flex gap-4 justify-center flex-wrap">
+            <button
+              onClick={handleToggleReady}
+              disabled={gameStarting}
+              className={`px-8 py-3 rounded-lg font-bold text-lg transition-all ${
+                isReady
+                  ? 'bg-green-600 hover:bg-green-500 text-white'
+                  : 'btn-primary'
+              } disabled:opacity-50`}
+            >
+              {isReady ? '✓ 已准备就绪' : '准备就绪'}
+            </button>
+            {isHost && (
               <button
                 onClick={handleStartGame}
-                disabled={readyCount < 1 || gameStarting}
+                disabled={readyCount < minPlayers || gameStarting}
                 className="btn-primary px-8 py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {readyCount < 1
-                  ? `需要至少 1 名玩家准备 (${readyCount}/1)`
+                {readyCount < minPlayers
+                  ? `需要至少 ${minPlayers} 名玩家准备 (${readyCount}/${minPlayers})`
                   : '🚀 开始游戏'}
               </button>
             )}

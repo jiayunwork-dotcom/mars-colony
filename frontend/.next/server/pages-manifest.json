@@ -1,1 +1,1 @@
-{"/_app":"pages/_app.js","/_document":"pages/_document.js","/room/[id]":"pages/room/[id].html","/_error":"pages/_error.js","/game/[id]":"pages/game/[id].html","/":"pages/index.html","/404":"pages/404.html"}
+{"/_app":"pages/_app.js","/_document":"pages/_document.js","/game/[id]":"pages/game/[id].html","/":"pages/index.html","/room/[id]":"pages/room/[id].html","/_error":"pages/_error.js","/404":"pages/404.html"}
