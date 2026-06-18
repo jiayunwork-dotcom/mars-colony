@@ -9,7 +9,7 @@ export function requestJointDefense(
   state: GameState,
   fromPlayerId: string,
   toPlayerId: string
-): { success: boolean; error?: string; request?: JointDefenseRequest } {
+): { success: boolean; error?: string; request?: JointDefenseRequest; protocol?: JointDefenseProtocol } {
   if (fromPlayerId === toPlayerId) {
     return { success: false, error: '不能与自己签订联防协议' };
   }
@@ -37,13 +37,11 @@ export function requestJointDefense(
     return { success: false, error: '已存在与该玩家的联防协议' };
   }
 
-  const existingPending = state.pendingJointDefenseRequests.find(
-    r =>
-      (r.fromPlayerId === fromPlayerId && r.toPlayerId === toPlayerId) ||
-      (r.fromPlayerId === toPlayerId && r.toPlayerId === fromPlayerId)
+  const existingMyRequest = state.pendingJointDefenseRequests.find(
+    r => r.fromPlayerId === fromPlayerId && r.toPlayerId === toPlayerId
   );
-  if (existingPending) {
-    return { success: false, error: '已存在待处理的联防请求' };
+  if (existingMyRequest) {
+    return { success: false, error: '你已向该玩家发出联防请求' };
   }
 
   const request: JointDefenseRequest = {
@@ -54,61 +52,58 @@ export function requestJointDefense(
   };
 
   state.pendingJointDefenseRequests.push(request);
+
+  const matchedProtocol = checkAutoMatchRequests(state, fromPlayerId, toPlayerId);
+
+  if (matchedProtocol) {
+    return { success: true, request, protocol: matchedProtocol };
+  }
+
   return { success: true, request };
 }
 
-export function acceptJointDefense(
+function checkAutoMatchRequests(
   state: GameState,
-  requestId: string,
-  acceptingPlayerId: string
-): { success: boolean; error?: string; protocol?: JointDefenseProtocol } {
-  const requestIndex = state.pendingJointDefenseRequests.findIndex(
-    r => r.id === requestId
+  playerA: string,
+  playerB: string
+): JointDefenseProtocol | null {
+  const aToB = state.pendingJointDefenseRequests.find(
+    r => r.fromPlayerId === playerA && r.toPlayerId === playerB
   );
-  if (requestIndex === -1) {
-    return { success: false, error: '请求不存在' };
+  const bToA = state.pendingJointDefenseRequests.find(
+    r => r.fromPlayerId === playerB && r.toPlayerId === playerA
+  );
+
+  if (!aToB || !bToA) return null;
+
+  if (aToB.turnCreated !== bToA.turnCreated) return null;
+
+  const aCount = countActiveProtocols(state, playerA);
+  const bCount = countActiveProtocols(state, playerB);
+  if (aCount >= MAX_JOINT_DEFENSE_PROTOCOLS || bCount >= MAX_JOINT_DEFENSE_PROTOCOLS) {
+    return null;
   }
 
-  const request = state.pendingJointDefenseRequests[requestIndex];
-
-  if (request.toPlayerId !== acceptingPlayerId && request.fromPlayerId !== acceptingPlayerId) {
-    return { success: false, error: '无权处理此请求' };
-  }
-
-  const otherPlayerId = request.fromPlayerId === acceptingPlayerId
-    ? request.toPlayerId
-    : request.fromPlayerId;
-
-  const myCount = countActiveProtocols(state, acceptingPlayerId);
-  if (myCount >= MAX_JOINT_DEFENSE_PROTOCOLS) {
-    state.pendingJointDefenseRequests.splice(requestIndex, 1);
-    return { success: false, error: '你的联防协议已达上限(2个)' };
-  }
-
-  const otherCount = countActiveProtocols(state, otherPlayerId);
-  if (otherCount >= MAX_JOINT_DEFENSE_PROTOCOLS) {
-    state.pendingJointDefenseRequests.splice(requestIndex, 1);
-    return { success: false, error: '对方的联防协议已达上限(2个)' };
-  }
-
-  state.pendingJointDefenseRequests.splice(requestIndex, 1);
+  state.pendingJointDefenseRequests = state.pendingJointDefenseRequests.filter(
+    r => r.id !== aToB.id && r.id !== bToA.id
+  );
 
   const protocol: JointDefenseProtocol = {
     id: uuidv4(),
-    playerAId: request.fromPlayerId,
-    playerBId: request.toPlayerId,
+    playerAId: playerA,
+    playerBId: playerB,
     status: 'active',
     activeTurn: state.currentTurn,
   };
 
   state.jointDefenseProtocols.push(protocol);
-  return { success: true, protocol };
+  return protocol;
 }
 
-export function rejectJointDefense(
+export function cancelJointDefenseRequest(
   state: GameState,
   requestId: string,
-  rejectingPlayerId: string
+  cancelingPlayerId: string
 ): { success: boolean; error?: string } {
   const requestIndex = state.pendingJointDefenseRequests.findIndex(
     r => r.id === requestId
@@ -119,8 +114,8 @@ export function rejectJointDefense(
 
   const request = state.pendingJointDefenseRequests[requestIndex];
 
-  if (request.toPlayerId !== rejectingPlayerId && request.fromPlayerId !== rejectingPlayerId) {
-    return { success: false, error: '无权处理此请求' };
+  if (request.fromPlayerId !== cancelingPlayerId && request.toPlayerId !== cancelingPlayerId) {
+    return { success: false, error: '无权取消此请求' };
   }
 
   state.pendingJointDefenseRequests.splice(requestIndex, 1);
@@ -214,7 +209,7 @@ export function updateInvalidProtocols(state: GameState): void {
     const aHasShields = playerHasActiveShields(state, protocol.playerAId);
     const bHasShields = playerHasActiveShields(state, protocol.playerBId);
 
-    if (!aHasShields && !bHasShields) {
+    if (!aHasShields || !bHasShields) {
       protocol.status = 'invalid';
     } else {
       protocol.status = 'active';
@@ -262,4 +257,26 @@ export function expireOldRequests(state: GameState): void {
   state.pendingJointDefenseRequests = state.pendingJointDefenseRequests.filter(
     r => state.currentTurn - r.turnCreated <= 3
   );
+}
+
+export function tryAutoMatchAllRequests(state: GameState): void {
+  let matched = true;
+  while (matched) {
+    matched = false;
+    const requests = [...state.pendingJointDefenseRequests];
+    for (const req of requests) {
+      const reverseReq = state.pendingJointDefenseRequests.find(
+        r => r.fromPlayerId === req.toPlayerId && r.toPlayerId === req.fromPlayerId
+      );
+      if (reverseReq && reverseReq.turnCreated === req.turnCreated) {
+        const aCount = countActiveProtocols(state, req.fromPlayerId);
+        const bCount = countActiveProtocols(state, req.toPlayerId);
+        if (aCount < MAX_JOINT_DEFENSE_PROTOCOLS && bCount < MAX_JOINT_DEFENSE_PROTOCOLS) {
+          checkAutoMatchRequests(state, req.fromPlayerId, req.toPlayerId);
+          matched = true;
+          break;
+        }
+      }
+    }
+  }
 }

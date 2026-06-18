@@ -35,8 +35,7 @@ import {
 import { OrderType, ResourceType } from '../types/game';
 import {
   requestJointDefense,
-  acceptJointDefense,
-  rejectJointDefense,
+  cancelJointDefenseRequest,
   terminateJointDefense,
   getAllyShieldCoverage,
   countActiveProtocols,
@@ -818,7 +817,7 @@ export async function handleJointDefenseRequest(
   }
 }
 
-export async function handleJointDefenseAccept(
+export async function handleJointDefenseCancel(
   io: Server,
   socket: Socket,
   data: { requestId: string },
@@ -833,36 +832,7 @@ export async function handleJointDefenseAccept(
     return;
   }
 
-  const result = acceptJointDefense(room.gameState, data.requestId, gamePlayerId);
-
-  if (result.success) {
-    saveGame(room.gameState.id, serializeGameState(room.gameState));
-    io.to(roomId).emit('joint_defense:updated', {
-      protocols: room.gameState.jointDefenseProtocols,
-      pendingRequests: room.gameState.pendingJointDefenseRequests,
-    });
-    callback?.({ success: true, protocol: result.protocol });
-  } else {
-    callback?.({ success: false, error: result.error });
-  }
-}
-
-export async function handleJointDefenseReject(
-  io: Server,
-  socket: Socket,
-  data: { requestId: string },
-  callback?: (result: any) => void
-): Promise<void> {
-  const roomId = socket.data.roomId;
-  const gamePlayerId = socket.data.gamePlayerId;
-  const room = rooms.get(roomId);
-
-  if (!room || !room.gameState || room.state.status !== 'in_game') {
-    callback?.({ success: false, error: '游戏未开始' });
-    return;
-  }
-
-  const result = rejectJointDefense(room.gameState, data.requestId, gamePlayerId);
+  const result = cancelJointDefenseRequest(room.gameState, data.requestId, gamePlayerId);
 
   if (result.success) {
     saveGame(room.gameState.id, serializeGameState(room.gameState));

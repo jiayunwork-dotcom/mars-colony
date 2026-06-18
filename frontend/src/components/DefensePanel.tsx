@@ -9,8 +9,7 @@ interface DefensePanelProps {
   showDefenseOverlay: boolean;
   onToggleDefenseOverlay: (show: boolean) => void;
   onJointDefenseRequest?: (toPlayerId: string) => void;
-  onJointDefenseAccept?: (requestId: string) => void;
-  onJointDefenseReject?: (requestId: string) => void;
+  onJointDefenseCancel?: (requestId: string) => void;
   onJointDefenseTerminate?: (protocolId: string) => void;
 }
 
@@ -21,8 +20,7 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
   showDefenseOverlay,
   onToggleDefenseOverlay,
   onJointDefenseRequest,
-  onJointDefenseAccept,
-  onJointDefenseReject,
+  onJointDefenseCancel,
   onJointDefenseTerminate,
 }) => {
   const warnings = gameState.disasterWarnings;
@@ -55,6 +53,12 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
     return myPendingRequests.filter(r => r.fromPlayerId === player.id);
   }, [myPendingRequests, player.id]);
 
+  const activeProtocolCount = useMemo(() => {
+    return (gameState.jointDefenseProtocols || []).filter(
+      p => (p.playerAId === player.id || p.playerBId === player.id) && p.status === 'active'
+    ).length;
+  }, [gameState.jointDefenseProtocols, player.id]);
+
   const allyShieldInfo = useMemo(() => {
     const result: Array<{
       protocolId: string;
@@ -65,6 +69,8 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
       status: string;
     }> = [];
 
+    const tiles = Object.values(gameState.map.tiles);
+
     for (const protocol of myProtocols) {
       const allyId = protocol.playerAId === player.id ? protocol.playerBId : protocol.playerAId;
       const allyPlayer = gameState.players[allyId];
@@ -72,7 +78,7 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
       let shieldCount = 0;
       const coveredCoords = new Set<string>();
 
-      for (const tile of Object.values(gameState.map.tiles)) {
+      for (const tile of tiles) {
         if (
           tile.facility?.type === 'shield_generator' &&
           tile.ownerId === allyId &&
@@ -81,7 +87,7 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
         ) {
           shieldCount++;
           const radius = FACILITY_CONFIG.shield_generator.shieldRadius || 1;
-          for (const otherTile of Object.values(gameState.map.tiles)) {
+          for (const otherTile of tiles) {
             if (hexDistance(tile.coord, otherTile.coord) <= radius) {
               coveredCoords.add(`${otherTile.coord.q},${otherTile.coord.r}`);
             }
@@ -102,12 +108,6 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
     return result;
   }, [myProtocols, gameState.players, gameState.map.tiles, player.id]);
 
-  const activeProtocolCount = useMemo(() => {
-    return (gameState.jointDefenseProtocols || []).filter(
-      p => (p.playerAId === player.id || p.playerBId === player.id) && p.status === 'active'
-    ).length;
-  }, [gameState.jointDefenseProtocols, player.id]);
-
   const availablePlayers = useMemo(() => {
     return Object.values(gameState.players).filter(p => {
       if (p.id === player.id) return false;
@@ -118,12 +118,10 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
           (proto.playerAId === p.id && proto.playerBId === player.id)
       );
       if (existingProtocol && existingProtocol.status !== 'terminated') return false;
-      const existingRequest = (gameState.pendingJointDefenseRequests || []).find(
-        r =>
-          (r.fromPlayerId === player.id && r.toPlayerId === p.id) ||
-          (r.fromPlayerId === p.id && r.toPlayerId === player.id)
+      const existingMyRequest = (gameState.pendingJointDefenseRequests || []).find(
+        r => r.fromPlayerId === player.id && r.toPlayerId === p.id
       );
-      if (existingRequest) return false;
+      if (existingMyRequest) return false;
       const theirCount = (gameState.jointDefenseProtocols || []).filter(
         proto => (proto.playerAId === p.id || proto.playerBId === p.id) && proto.status === 'active'
       ).length;
@@ -326,6 +324,11 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
                       <span>📍 覆盖格子: {info.coveredTileCount}格</span>
                     </div>
                   )}
+                  {protocol.status === 'invalid' && (
+                    <div className="text-[10px] text-gray-500 mt-1">
+                      提示：任一方防护罩全部摧毁后协议暂时无效，重建防护罩后自动恢复
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -334,36 +337,35 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
 
         {incomingRequests.length > 0 && (
           <div className="mb-2">
-            <div className="text-xs text-yellow-400 font-semibold mb-1">📨 待处理请求</div>
+            <div className="text-xs text-yellow-400 font-semibold mb-1">📨 收到的请求</div>
             <div className="space-y-1">
               {incomingRequests.map(req => {
                 const fromPlayer = gameState.players[req.fromPlayerId];
+                const sameTurn = req.turnCreated === gameState.currentTurn;
                 return (
-                  <div key={req.id} className="p-1.5 bg-yellow-900/20 border border-yellow-800/30 rounded text-xs flex items-center justify-between">
-                    <span>
-                      <span className="font-semibold" style={{ color: fromPlayer?.color || '#fff' }}>
-                        {fromPlayer?.name || req.fromPlayerId}
+                  <div key={req.id} className="p-1.5 bg-yellow-900/20 border border-yellow-800/30 rounded text-xs">
+                    <div className="flex items-center justify-between mb-1">
+                      <span>
+                        <span className="font-semibold" style={{ color: fromPlayer?.color || '#fff' }}>
+                          {fromPlayer?.name || req.fromPlayerId}
+                        </span>
+                        <span className="text-gray-400 ml-1">向你发起联防请求</span>
                       </span>
-                      <span className="text-gray-400 ml-1">请求联防</span>
-                    </span>
-                    <div className="flex gap-1">
-                      {onJointDefenseAccept && (
-                        <button
-                          onClick={() => onJointDefenseAccept(req.id)}
-                          className="text-[10px] px-1.5 py-0.5 bg-green-900/30 text-green-400 rounded hover:bg-green-900/50"
-                        >
-                          接受
-                        </button>
-                      )}
-                      {onJointDefenseReject && (
-                        <button
-                          onClick={() => onJointDefenseReject(req.id)}
-                          className="text-[10px] px-1.5 py-0.5 bg-red-900/30 text-red-400 rounded hover:bg-red-900/50"
-                        >
-                          拒绝
-                        </button>
-                      )}
+                      <span className="text-[10px] text-gray-500">回合 {req.turnCreated}</span>
                     </div>
+                    {onJointDefenseRequest && sameTurn && (
+                      <button
+                        onClick={() => onJointDefenseRequest(req.fromPlayerId)}
+                        className="text-[10px] w-full py-1 bg-cyan-900/30 text-cyan-400 rounded hover:bg-cyan-900/50 border border-cyan-800/30"
+                      >
+                        我也申请联防（本回合内互发即生效）
+                      </button>
+                    )}
+                    {!sameTurn && (
+                      <div className="text-[10px] text-gray-500">
+                        已过期（需在同一回合内互发请求才能生效）
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -377,17 +379,20 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
             <div className="space-y-1">
               {outgoingRequests.map(req => {
                 const toPlayer = gameState.players[req.toPlayerId];
+                const sameTurn = req.turnCreated === gameState.currentTurn;
                 return (
                   <div key={req.id} className="p-1.5 bg-gray-800/30 rounded text-xs flex items-center justify-between">
-                    <span>
+                    <div>
                       <span className="font-semibold" style={{ color: toPlayer?.color || '#fff' }}>
                         {toPlayer?.name || req.toPlayerId}
                       </span>
-                      <span className="text-gray-500 ml-1">等待确认</span>
-                    </span>
-                    {onJointDefenseReject && (
+                      <span className="text-gray-500 ml-1">
+                        {sameTurn ? '等待对方回应' : '已过期'}
+                      </span>
+                    </div>
+                    {onJointDefenseCancel && (
                       <button
-                        onClick={() => onJointDefenseReject(req.id)}
+                        onClick={() => onJointDefenseCancel(req.id)}
                         className="text-[10px] px-1.5 py-0.5 bg-gray-700 text-gray-400 rounded hover:bg-gray-600"
                       >
                         取消
@@ -419,12 +424,19 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({
             暂无联防协议
           </div>
         )}
+
+        <div className="mt-2 text-[10px] text-gray-600 text-center">
+          💡 双方在同一回合内互相发出请求，协议自动生效
+        </div>
       </div>
 
       {showRequestModal && onJointDefenseRequest && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={() => setShowRequestModal(false)}>
           <div className="panel rounded-xl p-4 max-w-xs w-full" onClick={e => e.stopPropagation()}>
             <h4 className="text-sm font-bold text-cyan-400 mb-3">🤝 发起联防请求</h4>
+            <p className="text-[11px] text-gray-400 mb-3">
+              向对方发出联防请求后，需对方在同一回合也向你发出请求，协议才会自动生效。
+            </p>
             {availablePlayers.length === 0 ? (
               <div className="text-xs text-gray-500 text-center py-2">没有可签约的玩家</div>
             ) : (

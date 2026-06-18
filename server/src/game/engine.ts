@@ -73,11 +73,11 @@ import {
 } from './auction';
 import {
   requestJointDefense,
-  acceptJointDefense,
-  rejectJointDefense,
+  cancelJointDefenseRequest,
   terminateJointDefense,
   updateInvalidProtocols,
   expireOldRequests,
+  tryAutoMatchAllRequests,
 } from './jointDefense';
 
 function deepClone<T>(obj: T): T {
@@ -465,14 +465,9 @@ function processPlayerAction(state: GameState, playerId: string, action: PlayerA
       requestJointDefense(state, playerId, toPlayerId);
       break;
     }
-    case 'joint_defense_accept': {
+    case 'joint_defense_cancel': {
       const { requestId } = action.payload as { requestId: string };
-      acceptJointDefense(state, requestId, playerId);
-      break;
-    }
-    case 'joint_defense_reject': {
-      const { requestId } = action.payload as { requestId: string };
-      rejectJointDefense(state, requestId, playerId);
+      cancelJointDefenseRequest(state, requestId, playerId);
       break;
     }
     case 'joint_defense_terminate': {

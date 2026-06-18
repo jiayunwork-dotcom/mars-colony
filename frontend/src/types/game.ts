@@ -329,8 +329,7 @@ export interface PlayerAction {
     | 'auction_negotiation_offer'
     | 'auction_negotiation_response'
     | 'joint_defense_request'
-    | 'joint_defense_accept'
-    | 'joint_defense_reject'
+    | 'joint_defense_cancel'
     | 'joint_defense_terminate';
   payload: any;
 }

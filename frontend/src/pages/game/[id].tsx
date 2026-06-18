@@ -267,18 +267,10 @@ export default function Game() {
     });
   }, [emit]);
 
-  const handleJointDefenseAccept = useCallback((requestId: string) => {
-    emit('joint_defense:accept', { requestId }, (response: any) => {
+  const handleJointDefenseCancel = useCallback((requestId: string) => {
+    emit('joint_defense:cancel', { requestId }, (response: any) => {
       if (!response?.success) {
-        alert(response?.error || '接受联防请求失败');
-      }
-    });
-  }, [emit]);
-
-  const handleJointDefenseReject = useCallback((requestId: string) => {
-    emit('joint_defense:reject', { requestId }, (response: any) => {
-      if (!response?.success) {
-        alert(response?.error || '拒绝联防请求失败');
+        alert(response?.error || '取消请求失败');
       }
     });
   }, [emit]);
@@ -507,8 +499,7 @@ export default function Game() {
                 showDefenseOverlay={showDefenseOverlay}
                 onToggleDefenseOverlay={setShowDefenseOverlay}
                 onJointDefenseRequest={handleJointDefenseRequest}
-                onJointDefenseAccept={handleJointDefenseAccept}
-                onJointDefenseReject={handleJointDefenseReject}
+                onJointDefenseCancel={handleJointDefenseCancel}
                 onJointDefenseTerminate={handleJointDefenseTerminate}
               />
             )}
