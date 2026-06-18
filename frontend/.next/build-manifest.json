@@ -5,8 +5,8 @@
   "devFiles": [],
   "ampDevFiles": [],
   "lowPriorityFiles": [
-    "static/QWk2xFGtBncNq7zPhK67U/_buildManifest.js",
-    "static/QWk2xFGtBncNq7zPhK67U/_ssgManifest.js"
+    "static/NTqBVksOSda7YwmYfsv0o/_buildManifest.js",
+    "static/NTqBVksOSda7YwmYfsv0o/_ssgManifest.js"
   ],
   "rootMainFiles": [
     "static/chunks/webpack-c58ebea0a7e3ed6d.js",
@@ -39,7 +39,7 @@
       "static/chunks/framework-71bae225a5c88d38.js",
       "static/chunks/main-47a495f800c76f83.js",
       "static/chunks/404-645450a46c40eab4.js",
-      "static/chunks/pages/game/[id]-947c001d581bf293.js"
+      "static/chunks/pages/game/[id]-2fe86542dc866ef3.js"
     ],
     "/room/[id]": [
       "static/chunks/webpack-c58ebea0a7e3ed6d.js",

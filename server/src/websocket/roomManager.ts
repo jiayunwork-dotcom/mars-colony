@@ -5,6 +5,7 @@ import {
   createInitialGameState,
   processTurn,
   serializeGameState,
+  deserializeGameState,
   queuePlayerAction,
 } from '../game/engine';
 import {
@@ -19,7 +20,7 @@ import {
   acquireAuctionLock,
   releaseAuctionLock,
 } from '../db/redis';
-import { saveGame, saveRoom, loadRoom, pool, saveTradeRecord } from '../db/postgres';
+import { saveGame, saveRoom, loadRoom, loadGame, pool, saveTradeRecord } from '../db/postgres';
 import { DEFAULT_GAME_SETTINGS, PLAYER_COLORS } from '../game/constants';
 import {
   createOrder,
@@ -389,22 +390,36 @@ export function listRooms(): RoomState[] {
 
 export async function restoreRoomsFromDB(io: Server): Promise<void> {
   try {
-    const result = await pool.query('SELECT id, state FROM rooms WHERE state->>\'status\' = \'lobby\'');
+    const result = await pool.query('SELECT id, state FROM rooms');
+    let restoredCount = 0;
     for (const row of result.rows) {
       const roomState = row.state as RoomState;
       if (!rooms.has(roomState.id)) {
+        let gameState: GameState | null = null;
+        if (roomState.status === 'in_game' && roomState.gameStateId) {
+          const rawGame = await loadGame(roomState.gameStateId);
+          if (rawGame) {
+            try {
+              gameState = deserializeGameState(rawGame);
+            } catch (err) {
+              console.error(`Failed to deserialize game state for room ${roomState.id}:`, err);
+              gameState = null;
+            }
+          }
+        }
         rooms.set(roomState.id, {
           state: roomState,
-          gameState: null,
+          gameState,
           turnTimer: null,
           auctionTimer: null,
           sockets: new Map(),
           pendingRemoval: new Map(),
         });
-        console.log(`Restored room: ${roomState.id} - ${roomState.name}`);
+        restoredCount++;
+        console.log(`Restored room: ${roomState.id} - ${roomState.name} (${roomState.status}${gameState ? ', game loaded' : ''})`);
       }
     }
-    console.log(`Restored ${result.rows.length} rooms from database`);
+    console.log(`Restored ${restoredCount} rooms from database`);
   } catch (err) {
     console.error('Failed to restore rooms from DB:', err);
   }

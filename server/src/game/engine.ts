@@ -182,10 +182,61 @@ export function createInitialGameState(playerCount: number): GameState {
   };
 }
 
+function ensureGameStateFields(state: GameState): void {
+  if (!state.activeDisasters) state.activeDisasters = [];
+  if (!state.disasterWarnings) state.disasterWarnings = [];
+  if (!state.disasterHistory) state.disasterHistory = [];
+  if (!state.pendingSettlement) state.pendingSettlement = null;
+  if (!state.pendingTrades) state.pendingTrades = [];
+  if (!state.completedTrades) state.completedTrades = [];
+  if (!state.orders) state.orders = [];
+  if (!state.negotiations) state.negotiations = [];
+  if (!state.tradeHistory) state.tradeHistory = [];
+  if (!state.turnActions) state.turnActions = {};
+  if (!state.playerTradeStats) state.playerTradeStats = {};
+  for (const tile of state.map.tiles.values()) {
+    if (tile.facility) {
+      const f = tile.facility as any;
+      if (f.durability === undefined) {
+        const cfg = (FACILITY_CONFIG as any)[f.type];
+        f.durability = cfg?.baseDurability || 100;
+        f.maxDurability = cfg?.baseDurability || 100;
+      }
+      if (f.maxDurability === undefined) {
+        f.maxDurability = f.durability;
+      }
+      if (f.isDisabled === undefined) {
+        f.isDisabled = false;
+      }
+      if (f.disabledTurns === undefined) {
+        f.disabledTurns = 0;
+      }
+      if (f.shelterCapacity === undefined) {
+        const cfg = (FACILITY_CONFIG as any)[f.type];
+        if (cfg?.shelterCapacity) {
+          f.shelterCapacity = cfg.shelterCapacity;
+        }
+      }
+    }
+  }
+  for (const player of Object.values(state.players)) {
+    if (!player.population) continue;
+    for (const colonist of player.population.colonists) {
+      if ((colonist as any).health === undefined) {
+        (colonist as any).health = 100;
+      }
+      if ((colonist as any).isSick === undefined) {
+        (colonist as any).isSick = false;
+      }
+    }
+  }
+}
+
 export function processTurn(state: GameState): GameState {
   if (state.phase !== 'playing') return state;
 
   const newState = deepClone(state);
+  ensureGameStateFields(newState);
   newState.pendingSettlement = null;
 
   step1_ResourceProduction(newState);
@@ -635,18 +686,67 @@ export function serializeGameState(state: GameState): any {
 
 export function deserializeGameState(data: any): GameState {
   const tiles = new Map<string, any>();
-  for (const [key, tile] of Object.entries(data.map.tiles)) {
-    tiles.set(key, tile);
+  for (const [key, tile] of Object.entries(data?.map?.tiles || {})) {
+    const t = typeof tile === 'object' && tile !== null ? { ...(tile as object) } : { coord: { q: 0, r: 0 } } as any;
+    if (t.facility) {
+      const f: any = { ...t.facility };
+      if (f.durability === undefined) {
+        const cfg = (FACILITY_CONFIG as any)[f.type];
+        f.durability = cfg?.baseDurability || 100;
+      }
+      if (f.maxDurability === undefined) {
+        f.maxDurability = f.durability;
+      }
+      if (f.isDisabled === undefined) {
+        f.isDisabled = false;
+      }
+      if (f.disabledTurns === undefined) {
+        f.disabledTurns = 0;
+      }
+      if (f.shelterCapacity === undefined) {
+        const cfg = (FACILITY_CONFIG as any)[f.type];
+        if (cfg?.shelterCapacity) {
+          f.shelterCapacity = cfg.shelterCapacity;
+        }
+      }
+      t.facility = f;
+    }
+    tiles.set(key, t);
+  }
+
+  const players: any = {};
+  for (const [id, p] of Object.entries(data?.players || {})) {
+    const pl = typeof p === 'object' && p !== null ? { ...(p as object) } : {} as any;
+    if (pl.population && pl.population.colonists) {
+      pl.population = {
+        ...pl.population,
+        colonists: pl.population.colonists.map((c: any) => ({
+          ...c,
+          health: c.health === undefined ? 100 : c.health,
+          isSick: c.isSick === undefined ? false : c.isSick,
+        })),
+      };
+    }
+    players[id] = pl;
   }
 
   return {
     ...data,
+    players,
     map: {
       ...data.map,
       tiles,
     },
+    activeDisasters: data.activeDisasters || [],
     disasterWarnings: data.disasterWarnings || [],
     disasterHistory: data.disasterHistory || [],
     pendingSettlement: data.pendingSettlement || null,
+    pendingTrades: data.pendingTrades || [],
+    completedTrades: data.completedTrades || [],
+    orders: data.orders || [],
+    negotiations: data.negotiations || [],
+    tradeHistory: data.tradeHistory || [],
+    turnActions: data.turnActions || {},
+    playerTradeStats: data.playerTradeStats || {},
   };
 }

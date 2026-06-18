@@ -20,7 +20,75 @@ import type {
   ChatMessage,
   PlayerAction,
 } from '../../types/game';
-import { DISASTER_CONFIG, WARNING_LEVEL_CONFIG } from '../../lib/gameConfig';
+import { DISASTER_CONFIG, WARNING_LEVEL_CONFIG, FACILITY_CONFIG } from '../../lib/gameConfig';
+
+function deserializeGameState(data: any): GameState {
+  const tiles: Record<string, any> = {};
+  const rawTiles = data?.map?.tiles || {};
+  for (const [key, tile] of Object.entries(rawTiles)) {
+    const t = typeof tile === 'object' && tile !== null ? { ...(tile as object) } : { coord: { q: 0, r: 0 } } as any;
+    if (t.facility) {
+      const f: any = { ...t.facility };
+      if (f.durability === undefined) {
+        const cfg = (FACILITY_CONFIG as any)[f.type];
+        f.durability = cfg?.baseDurability || 100;
+      }
+      if (f.maxDurability === undefined) {
+        f.maxDurability = f.durability;
+      }
+      if (f.isDisabled === undefined) {
+        f.isDisabled = false;
+      }
+      if (f.disabledTurns === undefined) {
+        f.disabledTurns = 0;
+      }
+      if (f.shelterCapacity === undefined) {
+        const cfg = (FACILITY_CONFIG as any)[f.type];
+        if (cfg?.shelterCapacity) {
+          f.shelterCapacity = cfg.shelterCapacity;
+        }
+      }
+      t.facility = f;
+    }
+    tiles[key] = t;
+  }
+
+  const players: any = {};
+  for (const [id, p] of Object.entries(data?.players || {})) {
+    const pl = typeof p === 'object' && p !== null ? { ...(p as object) } : {} as any;
+    if (pl.population && pl.population.colonists) {
+      pl.population = {
+        ...pl.population,
+        colonists: pl.population.colonists.map((c: any) => ({
+          ...c,
+          health: c.health === undefined ? 100 : c.health,
+          isSick: c.isSick === undefined ? false : c.isSick,
+        })),
+      };
+    }
+    players[id] = pl;
+  }
+
+  return {
+    ...data,
+    players,
+    map: {
+      ...(data?.map || { radius: 5, tiles: {} }),
+      tiles,
+    },
+    activeDisasters: data?.activeDisasters || [],
+    disasterWarnings: data?.disasterWarnings || [],
+    disasterHistory: data?.disasterHistory || [],
+    pendingSettlement: data?.pendingSettlement || null,
+    pendingTrades: data?.pendingTrades || [],
+    completedTrades: data?.completedTrades || [],
+    orders: data?.orders || [],
+    negotiations: data?.negotiations || [],
+    tradeHistory: data?.tradeHistory || [],
+    turnActions: data?.turnActions || {},
+    playerTradeStats: data?.playerTradeStats || {},
+  };
+}
 
 type TabType = 'build' | 'research' | 'trade' | 'auction' | 'defense' | 'population';
 
@@ -49,7 +117,7 @@ export default function Game() {
     }
 
     const handleTurnCompleted = (data: { gameState: GameState }) => {
-      setGameState(data.gameState);
+      setGameState(deserializeGameState(data.gameState));
       if (data.gameState.phase === 'ended') {
         setShowEndScreen(true);
       }
@@ -88,7 +156,7 @@ export default function Game() {
 
     emit('game:get-state', { roomId: id }, (response: any) => {
       if (response?.success) {
-        setGameState(response.gameState);
+        setGameState(deserializeGameState(response.gameState));
       }
     });
 
