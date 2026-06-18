@@ -1,82 +1,59 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
-
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { getSocket, isSocketConnected, onSocket, offSocket, emitSocket, disconnectSocket } from '../lib/socket';
 
 export function useSocket() {
-  const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const hasConnected = useRef(false);
 
-  const connect = useCallback(() => {
-    if (socketRef.current?.connected) {
-      return socketRef.current;
-    }
+  useEffect(() => {
+    try {
+      const socket = getSocket();
+      setIsConnected(socket.connected);
 
-    const socket = io(WS_URL, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
+      const handleConnect = () => setIsConnected(true);
+      const handleDisconnect = () => setIsConnected(false);
 
-    socket.on('connect', () => {
-      setIsConnected(true);
-      console.log('Socket connected');
-    });
+      if (!hasConnected.current) {
+        hasConnected.current = true;
+        if (socket.connected) {
+          setIsConnected(true);
+        }
+      }
 
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-      console.log('Socket disconnected');
-    });
+      onSocket('connect', handleConnect);
+      onSocket('disconnect', handleDisconnect);
 
-    socketRef.current = socket;
-    return socket;
-  }, []);
-
-  const disconnect = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-      socketRef.current = null;
-      setIsConnected(false);
+      return () => {
+        offSocket('connect', handleConnect);
+        offSocket('disconnect', handleDisconnect);
+      };
+    } catch (e) {
+      return;
     }
   }, []);
 
   const emit = useCallback((event: string, data?: any, callback?: (response: any) => void) => {
-    if (socketRef.current) {
-      if (callback) {
-        socketRef.current.emit(event, data, callback);
-      } else {
-        socketRef.current.emit(event, data);
-      }
-    }
+    emitSocket(event, data, callback);
   }, []);
 
   const on = useCallback((event: string, handler: (...args: any[]) => void) => {
-    if (socketRef.current) {
-      socketRef.current.on(event, handler);
-    }
+    onSocket(event, handler);
   }, []);
 
   const off = useCallback((event: string, handler?: (...args: any[]) => void) => {
-    if (socketRef.current) {
-      if (handler) {
-        socketRef.current.off(event, handler);
-      } else {
-        socketRef.current.off(event);
-      }
-    }
+    offSocket(event, handler);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
+  const connect = useCallback(() => {
+    return getSocket();
+  }, []);
+
+  const disconnect = useCallback(() => {
+    disconnectSocket();
   }, []);
 
   return {
-    socket: socketRef.current,
+    socket: null,
     isConnected,
     connect,
     disconnect,

@@ -138,9 +138,9 @@ export function processTurn(state: GameState): GameState {
 
   const newState = state;
 
-  step3_ProcessActions(newState);
   step1_ResourceProduction(newState);
   step2_ResourceConsumption(newState);
+  step3_ProcessActions(newState);
   step4_Research(newState);
   step5_PopulationChange(newState);
   step6_Disasters(newState);
@@ -161,40 +161,56 @@ export function processTurn(state: GameState): GameState {
 function step1_ResourceProduction(state: GameState): void {
   for (const playerId of Object.keys(state.players)) {
     const player = state.players[playerId];
-    let totalProduction = createEmptyResources();
     const playerTiles = Array.from(state.map.tiles.values()).filter(t => t.ownerId === playerId);
 
     let totalPowerProduction = 0;
     let totalPowerConsumption = 0;
-    const facilities: Array<{ tile: HexTile; config: any }> = [];
+    const powerProducers: Array<{ tile: HexTile; actualPower: number }> = [];
+    const powerConsumers: Array<{ tile: HexTile; consumption: number }> = [];
+    const allFacilities: Array<HexTile> = [];
 
     for (const tile of playerTiles) {
       if (!tile.facility || tile.facility.isDisabled) continue;
       const config = FACILITY_CONFIG[tile.facility.type];
-      totalPowerProduction += config.powerProduction || 0;
-      totalPowerConsumption += config.powerConsumption || 0;
-      facilities.push({ tile, config });
+      allFacilities.push(tile);
+
+      if (config.powerProduction > 0) {
+        let actualPower = config.powerProduction;
+        if (tile.terrain === 'polar' && tile.facility.type === 'solar_array') {
+          actualPower = Math.floor(actualPower * 0.4);
+        }
+        const sandstorm = state.activeDisasters.find(d => d.type === 'sandstorm');
+        if (sandstorm && tile.facility.type === 'solar_array') {
+          actualPower = Math.floor(actualPower * 0.2);
+        }
+        totalPowerProduction += actualPower;
+        powerProducers.push({ tile, actualPower });
+      }
+
+      if (config.powerConsumption > 0) {
+        totalPowerConsumption += config.powerConsumption;
+        powerConsumers.push({ tile, consumption: config.powerConsumption });
+      }
     }
 
-    const sandstorm = state.activeDisasters.find(d => d.type === 'sandstorm');
-    if (sandstorm) {
-      totalPowerProduction = Math.floor(totalPowerProduction * 0.2);
-    }
+    const powerRatio = totalPowerConsumption > 0
+      ? Math.min(1, totalPowerProduction / totalPowerConsumption)
+      : 1;
 
-    const powerRatio = totalPowerConsumption > 0 ? Math.min(1, totalPowerProduction / totalPowerConsumption) : 1;
-
-    for (const { tile, config } of facilities) {
+    for (const tile of allFacilities) {
       const facility = tile.facility!;
-      const terrainConfig = TERRAIN_CONFIG[tile.terrain as TerrainType];
+      const config = FACILITY_CONFIG[facility.type];
 
       if (config.powerConsumption > 0 && powerRatio < 1) {
         facility.isActive = Math.random() < powerRatio;
       } else {
         facility.isActive = true;
       }
+    }
 
-      if (!facility.isActive) continue;
-
+    let totalProduction = createEmptyResources();
+    for (const tile of allFacilities) {
+      if (!tile.facility?.isActive) continue;
       const production = calculateFacilityProduction(state, tile, player);
       totalProduction = addResources(totalProduction, production);
     }

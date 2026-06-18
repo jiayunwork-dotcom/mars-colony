@@ -25,7 +25,10 @@ const rooms: Map<string, {
   gameState: GameState | null;
   turnTimer: NodeJS.Timeout | null;
   sockets: Map<string, Socket>;
+  pendingRemoval: Map<string, NodeJS.Timeout>;
 }> = new Map();
+
+const RECONNECT_GRACE_PERIOD = 15000;
 
 export function createRoom(
   io: Server,
@@ -65,6 +68,7 @@ export function createRoom(
     gameState: null,
     turnTimer: null,
     sockets: new Map([[playerId, socket]]),
+    pendingRemoval: new Map(),
   });
 
   socket.join(roomId);
@@ -293,21 +297,35 @@ export function handleDisconnect(io: Server, socket: Socket): void {
   room.sockets.delete(playerId);
 
   if (room.state.status === 'lobby') {
-    room.state.players = room.state.players.filter(p => p.id !== playerId);
-
-    if (room.state.players.length === 0) {
-      deleteRoomState(roomId);
-      rooms.delete(roomId);
-      return;
+    const existingTimer = room.pendingRemoval.get(playerId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
     }
 
-    if (room.state.hostId === playerId) {
-      room.state.hostId = room.state.players[0].id;
-      room.state.players[0].isHost = true;
-    }
+    const timer = setTimeout(() => {
+      if (!rooms.has(roomId)) return;
+      const r = rooms.get(roomId)!;
 
-    io.to(roomId).emit('room:updated', room.state);
-    setRoomState(roomId, room.state);
+      r.pendingRemoval.delete(playerId);
+      r.state.players = r.state.players.filter(p => p.id !== playerId);
+
+      if (r.state.players.length === 0) {
+        deleteRoomState(roomId);
+        rooms.delete(roomId);
+        return;
+      }
+
+      if (r.state.hostId === playerId) {
+        r.state.hostId = r.state.players[0].id;
+        r.state.players[0].isHost = true;
+      }
+
+      io.to(roomId).emit('room:updated', r.state);
+      setRoomState(roomId, r.state);
+      saveRoom(roomId, r.state);
+    }, RECONNECT_GRACE_PERIOD);
+
+    room.pendingRemoval.set(playerId, timer);
   } else if (room.gameState) {
     const gamePlayerId = socket.data.gamePlayerId;
     if (gamePlayerId && room.gameState.players[gamePlayerId]) {
@@ -364,6 +382,7 @@ export async function restoreRoomsFromDB(io: Server): Promise<void> {
           gameState: null,
           turnTimer: null,
           sockets: new Map(),
+          pendingRemoval: new Map(),
         });
         console.log(`Restored room: ${roomState.id} - ${roomState.name}`);
       }
@@ -394,4 +413,40 @@ export function getRoomStateBySocket(roomId: string, socket: Socket, playerId: s
   }
 
   return { roomState: room.state, playerId: foundPlayerId };
+}
+
+export function rejoinRoom(
+  io: Server,
+  socket: Socket,
+  roomId: string,
+  playerId: string
+): { success: boolean; error?: string } {
+  const room = rooms.get(roomId);
+  if (!room) {
+    return { success: false, error: '房间不存在' };
+  }
+
+  if (room.state.status !== 'lobby') {
+    return { success: false, error: '游戏已开始' };
+  }
+
+  const player = room.state.players.find(p => p.id === playerId);
+  if (!player) {
+    return { success: false, error: '玩家不在房间中' };
+  }
+
+  const existingTimer = room.pendingRemoval.get(playerId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    room.pendingRemoval.delete(playerId);
+  }
+
+  room.sockets.set(playerId, socket);
+  socket.join(roomId);
+  socket.data.playerId = playerId;
+  socket.data.roomId = roomId;
+
+  io.to(roomId).emit('room:updated', room.state);
+
+  return { success: true };
 }

@@ -16,6 +16,7 @@ import {
   getGameStateHandler,
   restoreRoomsFromDB,
   getRoomStateBySocket,
+  rejoinRoom,
 } from './websocket/roomManager';
 import { serializeGameState } from './game/engine';
 
@@ -122,6 +123,11 @@ io.on('connection', (socket) => {
 
   socket.on('room:get-state', (data: { roomId: string; playerId?: string }, callback) => {
     const storedPlayerId = socket.data.playerId || data.playerId || null;
+
+    if (storedPlayerId && !socket.data.roomId) {
+      rejoinRoom(io, socket, data.roomId, storedPlayerId);
+    }
+
     const result = getRoomStateBySocket(data.roomId, socket, storedPlayerId);
     if (result.roomState) {
       callback?.({

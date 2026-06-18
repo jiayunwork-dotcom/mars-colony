@@ -5,8 +5,8 @@
   "devFiles": [],
   "ampDevFiles": [],
   "lowPriorityFiles": [
-    "static/2v8nHbIFcsPAalDXYew0T/_buildManifest.js",
-    "static/2v8nHbIFcsPAalDXYew0T/_ssgManifest.js"
+    "static/20yK2lMV33ufWwgh8XP-v/_buildManifest.js",
+    "static/20yK2lMV33ufWwgh8XP-v/_ssgManifest.js"
   ],
   "rootMainFiles": [
     "static/chunks/webpack-a9946b2e80d750be.js",
@@ -19,7 +19,7 @@
       "static/chunks/framework-71bae225a5c88d38.js",
       "static/chunks/main-47a495f800c76f83.js",
       "static/chunks/404-645450a46c40eab4.js",
-      "static/chunks/pages/index-75c3c36d7635cdf0.js"
+      "static/chunks/pages/index-e1deaf9b0917f77f.js"
     ],
     "/_app": [
       "static/chunks/webpack-a9946b2e80d750be.js",
@@ -39,14 +39,14 @@
       "static/chunks/framework-71bae225a5c88d38.js",
       "static/chunks/main-47a495f800c76f83.js",
       "static/chunks/404-645450a46c40eab4.js",
-      "static/chunks/pages/game/[id]-3804f85ee884208d.js"
+      "static/chunks/pages/game/[id]-92b6bb50077df551.js"
     ],
     "/room/[id]": [
       "static/chunks/webpack-a9946b2e80d750be.js",
       "static/chunks/framework-71bae225a5c88d38.js",
       "static/chunks/main-47a495f800c76f83.js",
       "static/chunks/404-645450a46c40eab4.js",
-      "static/chunks/pages/room/[id]-cf4d76691e6ab5ba.js"
+      "static/chunks/pages/room/[id]-22102107486c81d9.js"
     ]
   },
   "ampFirstPages": []

@@ -124,8 +124,10 @@ export function calculateFacilityConsumption(
   const config = FACILITY_CONFIG[facility.type];
   const consumption = { ...config.maintenance };
 
+  delete consumption.power;
+
   if (config.powerConsumption > 0) {
-    consumption.power = (consumption.power || 0) + config.powerConsumption;
+    consumption.power = config.powerConsumption;
   }
 
   return consumption;
