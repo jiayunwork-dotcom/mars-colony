@@ -118,7 +118,7 @@ export default function Room() {
     );
   }
 
-  const readyCount = room.players.filter(p => p.isReady).length;
+  const readyCount = room.players.filter(p => p.isReady || p.isHost).length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-mars-950 via-gray-900 to-mars-900 p-4">
@@ -209,11 +209,11 @@ export default function Room() {
             ) : (
               <button
                 onClick={handleStartGame}
-                disabled={readyCount < 4 || gameStarting}
+                disabled={readyCount < 1 || gameStarting}
                 className="btn-primary px-8 py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {readyCount < 4
-                  ? `需要至少 4 名玩家准备 (${readyCount}/4)`
+                {readyCount < 1
+                  ? `需要至少 1 名玩家准备 (${readyCount}/1)`
                   : '🚀 开始游戏'}
               </button>
             )}
