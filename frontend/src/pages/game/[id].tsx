@@ -452,6 +452,8 @@ export default function Game() {
                 gameState={gameState}
                 player={currentPlayer}
                 onSettlementClose={handleSettlementClose}
+                showDefenseOverlay={showDefenseOverlay}
+                onToggleDefenseOverlay={setShowDefenseOverlay}
               />
             )}
 

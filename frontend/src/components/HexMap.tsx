@@ -79,8 +79,9 @@ export const HexMap: React.FC<HexMapProps> = ({
   const shieldRadiusMap = new Map<string, number>();
   if (showDefenseOverlay) {
     for (const tile of tiles) {
-      if (tile.facility?.type === 'shield_generator' && !tile.facility.isDisabled && tile.facility.durability > 0) {
-        const radius = FACILITY_CONFIG.shield_generator.shieldRadius || 1;
+      const f = tile.facility as any;
+      if (f?.type === 'shield_generator' && !f?.isDisabled && (f?.durability === undefined || f.durability > 0)) {
+        const radius = (FACILITY_CONFIG as any).shield_generator?.shieldRadius || 1;
         const coveredCoords = getTilesWithinRadius(tile.coord, radius);
         for (const coord of coveredCoords) {
           shieldedTileSet.add(hexKey(coord.q, coord.r));

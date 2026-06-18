@@ -6,9 +6,11 @@ interface DefensePanelProps {
   gameState: GameState;
   player: Player;
   onSettlementClose?: () => void;
+  showDefenseOverlay: boolean;
+  onToggleDefenseOverlay: (show: boolean) => void;
 }
 
-export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, onSettlementClose }) => {
+export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, onSettlementClose, showDefenseOverlay, onToggleDefenseOverlay }) => {
   const warnings = gameState.disasterWarnings;
   const activeDisasters = gameState.activeDisasters;
   const history = gameState.disasterHistory;
@@ -96,7 +98,19 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, o
       )}
 
       <div className="panel rounded-xl p-3">
-        <h3 className="text-sm font-bold mb-2 text-blue-400">🛡️ 防御设施状态</h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-blue-400">🛡️ 防御设施状态</h3>
+          <button
+            onClick={() => onToggleDefenseOverlay(!showDefenseOverlay)}
+            className={`text-xs px-2 py-1 rounded transition-colors ${
+              showDefenseOverlay
+                ? 'bg-blue-600 text-white hover:bg-blue-500'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            {showDefenseOverlay ? '✓ 显示覆盖范围' : '显示防御覆盖'}
+          </button>
+        </div>
         {defenseFacilities.length === 0 ? (
           <div className="text-center text-gray-500 text-xs py-2">
             未部署任何防御设施
@@ -105,8 +119,11 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, o
           <div className="space-y-2">
             {defenseFacilities.map(tile => {
               if (!tile.facility) return null;
-              const config = FACILITY_CONFIG[tile.facility.type];
-              const durabilityPct = (tile.facility.durability / tile.facility.maxDurability) * 100;
+              const config = FACILITY_CONFIG[tile.facility.type] as any;
+              const f = tile.facility as any;
+              const maxDur = f.maxDurability || config?.baseDurability || 100;
+              const dur = f.durability !== undefined ? f.durability : maxDur;
+              const durabilityPct = (dur / maxDur) * 100;
               const durabilityColor = durabilityPct > 60 ? '#22c55e' : durabilityPct > 30 ? '#eab308' : '#ef4444';
               return (
                 <div key={hexKey(tile.coord.q, tile.coord.r)} className="p-2 bg-gray-800/50 rounded-lg text-xs">
@@ -116,7 +133,7 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, o
                       <span className="font-semibold">{config.name}</span>
                     </div>
                     {tile.facility.type === 'shelter' && (
-                      <span className="text-gray-400">容量: {tile.facility.shelterCapacity || config.shelterCapacity}</span>
+                      <span className="text-gray-400">容量: {f.shelterCapacity || config.shelterCapacity}</span>
                     )}
                     {tile.facility.type === 'shield_generator' && (
                       <span className="text-gray-400">覆盖半径: {config.shieldRadius}格</span>
@@ -134,10 +151,10 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, o
                       />
                     </div>
                     <span className="text-xs" style={{ color: durabilityColor }}>
-                      {tile.facility.durability}/{tile.facility.maxDurability}
+                      {dur}/{maxDur}
                     </span>
                   </div>
-                  {tile.facility.isDisabled && (
+                  {f.isDisabled && (
                     <div className="text-red-400 text-xs mt-1">⚠️ 已停用</div>
                   )}
                 </div>
