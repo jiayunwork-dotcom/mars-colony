@@ -153,6 +153,7 @@ export interface DisasterSettlement {
     coord: HexCoord;
     defenseType: FacilityType;
     damageAbsorbed: number;
+    allyPlayerName?: string;
   }>;
   shieldedTiles: HexCoord[];
 }
@@ -162,6 +163,23 @@ export interface DisasterHistoryEntry {
   disasterType: DisasterType;
   center: HexCoord;
   settlement: DisasterSettlement;
+}
+
+export type JointDefenseProtocolStatus = 'active' | 'invalid' | 'terminated';
+
+export interface JointDefenseProtocol {
+  id: string;
+  playerAId: string;
+  playerBId: string;
+  status: JointDefenseProtocolStatus;
+  activeTurn: number;
+}
+
+export interface JointDefenseRequest {
+  id: string;
+  fromPlayerId: string;
+  toPlayerId: string;
+  turnCreated: number;
 }
 
 export interface TradeOffer {
@@ -290,6 +308,8 @@ export interface GameState {
   negotiations: Negotiation[];
   tradeHistory: TradeRecord[];
   playerTradeStats: Record<string, PlayerTradeStats>;
+  jointDefenseProtocols: JointDefenseProtocol[];
+  pendingJointDefenseRequests: JointDefenseRequest[];
 }
 
 export interface PlayerAction {
@@ -308,7 +328,11 @@ export interface PlayerAction {
     | 'auction_fill_order'
     | 'auction_start_negotiation'
     | 'auction_negotiation_offer'
-    | 'auction_negotiation_response';
+    | 'auction_negotiation_response'
+    | 'joint_defense_request'
+    | 'joint_defense_accept'
+    | 'joint_defense_reject'
+    | 'joint_defense_terminate';
   payload: any;
 }
 

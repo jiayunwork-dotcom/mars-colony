@@ -71,6 +71,14 @@ import {
   checkNegotiationTimeouts,
   checkExpiredOrders,
 } from './auction';
+import {
+  requestJointDefense,
+  acceptJointDefense,
+  rejectJointDefense,
+  terminateJointDefense,
+  updateInvalidProtocols,
+  expireOldRequests,
+} from './jointDefense';
 
 function deepClone<T>(obj: T): T {
   if (typeof structuredClone === 'function') {
@@ -179,6 +187,8 @@ export function createInitialGameState(playerCount: number): GameState {
     negotiations: [],
     tradeHistory: [],
     playerTradeStats,
+    jointDefenseProtocols: [],
+    pendingJointDefenseRequests: [],
   };
 }
 
@@ -194,6 +204,8 @@ function ensureGameStateFields(state: GameState): void {
   if (!state.tradeHistory) state.tradeHistory = [];
   if (!state.turnActions) state.turnActions = {};
   if (!state.playerTradeStats) state.playerTradeStats = {};
+  if (!state.jointDefenseProtocols) state.jointDefenseProtocols = [];
+  if (!state.pendingJointDefenseRequests) state.pendingJointDefenseRequests = [];
   for (const tile of state.map.tiles.values()) {
     if (tile.facility) {
       const f = tile.facility as any;
@@ -448,6 +460,26 @@ function processPlayerAction(state: GameState, playerId: string, action: PlayerA
       respondToNegotiation(state, negotiationId, playerId, accept);
       break;
     }
+    case 'joint_defense_request': {
+      const { toPlayerId } = action.payload as { toPlayerId: string };
+      requestJointDefense(state, playerId, toPlayerId);
+      break;
+    }
+    case 'joint_defense_accept': {
+      const { requestId } = action.payload as { requestId: string };
+      acceptJointDefense(state, requestId, playerId);
+      break;
+    }
+    case 'joint_defense_reject': {
+      const { requestId } = action.payload as { requestId: string };
+      rejectJointDefense(state, requestId, playerId);
+      break;
+    }
+    case 'joint_defense_terminate': {
+      const { protocolId } = action.payload as { protocolId: string };
+      terminateJointDefense(state, protocolId, playerId);
+      break;
+    }
   }
 }
 
@@ -558,6 +590,10 @@ function step6_Disasters(state: GameState): void {
   // 6. 生成新的灾害预警
   const newWarnings = rollDisasterWarnings(state);
   state.disasterWarnings.push(...newWarnings);
+
+  // 7. 联防协议维护
+  updateInvalidProtocols(state);
+  expireOldRequests(state);
 }
 
 function mergeSettlements(settlements: DisasterSettlement[]): DisasterSettlement {
@@ -681,6 +717,8 @@ export function serializeGameState(state: GameState): any {
     negotiations: state.negotiations.filter(n => n.status === 'pending'),
     tradeHistory: state.tradeHistory.slice(-50),
     playerTradeStats: state.playerTradeStats,
+    jointDefenseProtocols: state.jointDefenseProtocols,
+    pendingJointDefenseRequests: state.pendingJointDefenseRequests,
   };
 }
 
@@ -748,5 +786,7 @@ export function deserializeGameState(data: any): GameState {
     tradeHistory: data.tradeHistory || [],
     turnActions: data.turnActions || {},
     playerTradeStats: data.playerTradeStats || {},
+    jointDefenseProtocols: data.jointDefenseProtocols || [],
+    pendingJointDefenseRequests: data.pendingJointDefenseRequests || [],
   };
 }

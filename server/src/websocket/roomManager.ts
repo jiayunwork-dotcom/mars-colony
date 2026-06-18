@@ -33,6 +33,16 @@ import {
   checkExpiredOrders,
 } from '../game/auction';
 import { OrderType, ResourceType } from '../types/game';
+import {
+  requestJointDefense,
+  acceptJointDefense,
+  rejectJointDefense,
+  terminateJointDefense,
+  getAllyShieldCoverage,
+  countActiveProtocols,
+  getPendingRequestsForPlayer,
+  MAX_JOINT_DEFENSE_PROTOCOLS,
+} from '../game/jointDefense';
 
 const rooms: Map<string, {
   state: RoomState;
@@ -777,5 +787,121 @@ function broadcastTradeExecuted(io: Server, roomId: string, trade: any): void {
 
 function broadcastNegotiationUpdate(io: Server, roomId: string, negotiation: any): void {
   io.to(roomId).emit('auction:negotiation-updated', negotiation);
+}
+
+export async function handleJointDefenseRequest(
+  io: Server,
+  socket: Socket,
+  data: { toPlayerId: string },
+  callback?: (result: any) => void
+): Promise<void> {
+  const roomId = socket.data.roomId;
+  const gamePlayerId = socket.data.gamePlayerId;
+  const room = rooms.get(roomId);
+
+  if (!room || !room.gameState || room.state.status !== 'in_game') {
+    callback?.({ success: false, error: '游戏未开始' });
+    return;
+  }
+
+  const result = requestJointDefense(room.gameState, gamePlayerId, data.toPlayerId);
+
+  if (result.success) {
+    saveGame(room.gameState.id, serializeGameState(room.gameState));
+    io.to(roomId).emit('joint_defense:updated', {
+      protocols: room.gameState.jointDefenseProtocols,
+      pendingRequests: room.gameState.pendingJointDefenseRequests,
+    });
+    callback?.({ success: true, request: result.request });
+  } else {
+    callback?.({ success: false, error: result.error });
+  }
+}
+
+export async function handleJointDefenseAccept(
+  io: Server,
+  socket: Socket,
+  data: { requestId: string },
+  callback?: (result: any) => void
+): Promise<void> {
+  const roomId = socket.data.roomId;
+  const gamePlayerId = socket.data.gamePlayerId;
+  const room = rooms.get(roomId);
+
+  if (!room || !room.gameState || room.state.status !== 'in_game') {
+    callback?.({ success: false, error: '游戏未开始' });
+    return;
+  }
+
+  const result = acceptJointDefense(room.gameState, data.requestId, gamePlayerId);
+
+  if (result.success) {
+    saveGame(room.gameState.id, serializeGameState(room.gameState));
+    io.to(roomId).emit('joint_defense:updated', {
+      protocols: room.gameState.jointDefenseProtocols,
+      pendingRequests: room.gameState.pendingJointDefenseRequests,
+    });
+    callback?.({ success: true, protocol: result.protocol });
+  } else {
+    callback?.({ success: false, error: result.error });
+  }
+}
+
+export async function handleJointDefenseReject(
+  io: Server,
+  socket: Socket,
+  data: { requestId: string },
+  callback?: (result: any) => void
+): Promise<void> {
+  const roomId = socket.data.roomId;
+  const gamePlayerId = socket.data.gamePlayerId;
+  const room = rooms.get(roomId);
+
+  if (!room || !room.gameState || room.state.status !== 'in_game') {
+    callback?.({ success: false, error: '游戏未开始' });
+    return;
+  }
+
+  const result = rejectJointDefense(room.gameState, data.requestId, gamePlayerId);
+
+  if (result.success) {
+    saveGame(room.gameState.id, serializeGameState(room.gameState));
+    io.to(roomId).emit('joint_defense:updated', {
+      protocols: room.gameState.jointDefenseProtocols,
+      pendingRequests: room.gameState.pendingJointDefenseRequests,
+    });
+    callback?.({ success: true });
+  } else {
+    callback?.({ success: false, error: result.error });
+  }
+}
+
+export async function handleJointDefenseTerminate(
+  io: Server,
+  socket: Socket,
+  data: { protocolId: string },
+  callback?: (result: any) => void
+): Promise<void> {
+  const roomId = socket.data.roomId;
+  const gamePlayerId = socket.data.gamePlayerId;
+  const room = rooms.get(roomId);
+
+  if (!room || !room.gameState || room.state.status !== 'in_game') {
+    callback?.({ success: false, error: '游戏未开始' });
+    return;
+  }
+
+  const result = terminateJointDefense(room.gameState, data.protocolId, gamePlayerId);
+
+  if (result.success) {
+    saveGame(room.gameState.id, serializeGameState(room.gameState));
+    io.to(roomId).emit('joint_defense:updated', {
+      protocols: room.gameState.jointDefenseProtocols,
+      pendingRequests: room.gameState.pendingJointDefenseRequests,
+    });
+    callback?.({ success: true });
+  } else {
+    callback?.({ success: false, error: result.error });
+  }
 }
 

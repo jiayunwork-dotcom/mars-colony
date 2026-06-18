@@ -23,6 +23,10 @@ import {
   handleStartNegotiation,
   handleMakeNegotiationOffer,
   handleRespondNegotiation,
+  handleJointDefenseRequest,
+  handleJointDefenseAccept,
+  handleJointDefenseReject,
+  handleJointDefenseTerminate,
 } from './websocket/roomManager';
 import { serializeGameState } from './game/engine';
 
@@ -185,6 +189,22 @@ io.on('connection', (socket) => {
     accept: boolean;
   }, callback) => {
     handleRespondNegotiation(io, socket, data, callback);
+  });
+
+  socket.on('joint_defense:request', (data: { toPlayerId: string }, callback) => {
+    handleJointDefenseRequest(io, socket, data, callback);
+  });
+
+  socket.on('joint_defense:accept', (data: { requestId: string }, callback) => {
+    handleJointDefenseAccept(io, socket, data, callback);
+  });
+
+  socket.on('joint_defense:reject', (data: { requestId: string }, callback) => {
+    handleJointDefenseReject(io, socket, data, callback);
+  });
+
+  socket.on('joint_defense:terminate', (data: { protocolId: string }, callback) => {
+    handleJointDefenseTerminate(io, socket, data, callback);
   });
 
   socket.on('disconnect', () => {

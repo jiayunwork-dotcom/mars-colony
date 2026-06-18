@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { GameState, Player, DisasterSettlement, DisasterHistoryEntry } from '../types/game';
+import React, { useState, useMemo } from 'react';
+import { GameState, Player, DisasterSettlement, DisasterHistoryEntry, JointDefenseProtocol, JointDefenseRequest } from '../types/game';
 import { DISASTER_CONFIG, WARNING_LEVEL_CONFIG, FACILITY_CONFIG, hexKey, hexDistance } from '../lib/gameConfig';
 
 interface DefensePanelProps {
@@ -8,17 +8,135 @@ interface DefensePanelProps {
   onSettlementClose?: () => void;
   showDefenseOverlay: boolean;
   onToggleDefenseOverlay: (show: boolean) => void;
+  onJointDefenseRequest?: (toPlayerId: string) => void;
+  onJointDefenseAccept?: (requestId: string) => void;
+  onJointDefenseReject?: (requestId: string) => void;
+  onJointDefenseTerminate?: (protocolId: string) => void;
 }
 
-export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, onSettlementClose, showDefenseOverlay, onToggleDefenseOverlay }) => {
+export const DefensePanel: React.FC<DefensePanelProps> = ({
+  gameState,
+  player,
+  onSettlementClose,
+  showDefenseOverlay,
+  onToggleDefenseOverlay,
+  onJointDefenseRequest,
+  onJointDefenseAccept,
+  onJointDefenseReject,
+  onJointDefenseTerminate,
+}) => {
   const warnings = gameState.disasterWarnings;
   const activeDisasters = gameState.activeDisasters;
   const history = gameState.disasterHistory;
   const [selectedHistory, setSelectedHistory] = useState<DisasterHistoryEntry | null>(null);
+  const [showRequestModal, setShowRequestModal] = useState(false);
 
   const defenseFacilities = Object.values(gameState.map.tiles).filter(
     t => t.facility && FACILITY_CONFIG[t.facility.type]?.isDefense && t.ownerId === player.id
   );
+
+  const myProtocols = useMemo(() => {
+    return (gameState.jointDefenseProtocols || []).filter(
+      p => (p.playerAId === player.id || p.playerBId === player.id) && p.status !== 'terminated'
+    );
+  }, [gameState.jointDefenseProtocols, player.id]);
+
+  const myPendingRequests = useMemo(() => {
+    return (gameState.pendingJointDefenseRequests || []).filter(
+      r => r.toPlayerId === player.id || r.fromPlayerId === player.id
+    );
+  }, [gameState.pendingJointDefenseRequests, player.id]);
+
+  const incomingRequests = useMemo(() => {
+    return myPendingRequests.filter(r => r.toPlayerId === player.id);
+  }, [myPendingRequests, player.id]);
+
+  const outgoingRequests = useMemo(() => {
+    return myPendingRequests.filter(r => r.fromPlayerId === player.id);
+  }, [myPendingRequests, player.id]);
+
+  const allyShieldInfo = useMemo(() => {
+    const result: Array<{
+      protocolId: string;
+      allyId: string;
+      allyName: string;
+      shieldCount: number;
+      coveredTileCount: number;
+      status: string;
+    }> = [];
+
+    for (const protocol of myProtocols) {
+      const allyId = protocol.playerAId === player.id ? protocol.playerBId : protocol.playerAId;
+      const allyPlayer = gameState.players[allyId];
+
+      let shieldCount = 0;
+      const coveredCoords = new Set<string>();
+
+      for (const tile of Object.values(gameState.map.tiles)) {
+        if (
+          tile.facility?.type === 'shield_generator' &&
+          tile.ownerId === allyId &&
+          !tile.facility.isDisabled &&
+          tile.facility.durability > 0
+        ) {
+          shieldCount++;
+          const radius = FACILITY_CONFIG.shield_generator.shieldRadius || 1;
+          for (const otherTile of Object.values(gameState.map.tiles)) {
+            if (hexDistance(tile.coord, otherTile.coord) <= radius) {
+              coveredCoords.add(`${otherTile.coord.q},${otherTile.coord.r}`);
+            }
+          }
+        }
+      }
+
+      result.push({
+        protocolId: protocol.id,
+        allyId,
+        allyName: allyPlayer?.name || allyId,
+        shieldCount,
+        coveredTileCount: coveredCoords.size,
+        status: protocol.status,
+      });
+    }
+
+    return result;
+  }, [myProtocols, gameState.players, gameState.map.tiles, player.id]);
+
+  const activeProtocolCount = useMemo(() => {
+    return (gameState.jointDefenseProtocols || []).filter(
+      p => (p.playerAId === player.id || p.playerBId === player.id) && p.status === 'active'
+    ).length;
+  }, [gameState.jointDefenseProtocols, player.id]);
+
+  const availablePlayers = useMemo(() => {
+    return Object.values(gameState.players).filter(p => {
+      if (p.id === player.id) return false;
+      if (p.disconnected) return false;
+      const existingProtocol = (gameState.jointDefenseProtocols || []).find(
+        proto =>
+          (proto.playerAId === player.id && proto.playerBId === p.id) ||
+          (proto.playerAId === p.id && proto.playerBId === player.id)
+      );
+      if (existingProtocol && existingProtocol.status !== 'terminated') return false;
+      const existingRequest = (gameState.pendingJointDefenseRequests || []).find(
+        r =>
+          (r.fromPlayerId === player.id && r.toPlayerId === p.id) ||
+          (r.fromPlayerId === p.id && r.toPlayerId === player.id)
+      );
+      if (existingRequest) return false;
+      const theirCount = (gameState.jointDefenseProtocols || []).filter(
+        proto => (proto.playerAId === p.id || proto.playerBId === p.id) && proto.status === 'active'
+      ).length;
+      if (theirCount >= 2) return false;
+      return true;
+    });
+  }, [gameState.players, gameState.jointDefenseProtocols, gameState.pendingJointDefenseRequests, player.id]);
+
+  const statusLabel: Record<string, { text: string; color: string }> = {
+    active: { text: '生效中', color: '#22c55e' },
+    invalid: { text: '无效', color: '#ef4444' },
+    terminated: { text: '已解约', color: '#6b7280' },
+  };
 
   return (
     <div className="space-y-3">
@@ -166,6 +284,182 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, o
       </div>
 
       <div className="panel rounded-xl p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-cyan-400">🤝 联防协议</h3>
+          <span className="text-xs text-gray-500">{activeProtocolCount}/2 协议</span>
+        </div>
+
+        {myProtocols.length > 0 && (
+          <div className="space-y-1.5 mb-2">
+            {myProtocols.map(protocol => {
+              const info = allyShieldInfo.find(a => a.protocolId === protocol.id);
+              const sl = statusLabel[protocol.status] || statusLabel.active;
+              return (
+                <div key={protocol.id} className="p-2 bg-gray-800/50 rounded-lg text-xs">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold" style={{ color: gameState.players[info?.allyId || '']?.color || '#fff' }}>
+                        {info?.allyName || '未知'}
+                      </span>
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                        style={{
+                          backgroundColor: sl.color + '22',
+                          color: sl.color,
+                        }}
+                      >
+                        {sl.text}
+                      </span>
+                    </div>
+                    {onJointDefenseTerminate && protocol.status !== 'terminated' && (
+                      <button
+                        onClick={() => onJointDefenseTerminate(protocol.id)}
+                        className="text-[10px] px-1.5 py-0.5 bg-red-900/30 text-red-400 rounded hover:bg-red-900/50 transition-colors"
+                      >
+                        解约
+                      </button>
+                    )}
+                  </div>
+                  {info && (
+                    <div className="flex gap-3 text-gray-400 text-[10px]">
+                      <span>🛡️ 共享防护罩: {info.shieldCount}个</span>
+                      <span>📍 覆盖格子: {info.coveredTileCount}格</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {incomingRequests.length > 0 && (
+          <div className="mb-2">
+            <div className="text-xs text-yellow-400 font-semibold mb-1">📨 待处理请求</div>
+            <div className="space-y-1">
+              {incomingRequests.map(req => {
+                const fromPlayer = gameState.players[req.fromPlayerId];
+                return (
+                  <div key={req.id} className="p-1.5 bg-yellow-900/20 border border-yellow-800/30 rounded text-xs flex items-center justify-between">
+                    <span>
+                      <span className="font-semibold" style={{ color: fromPlayer?.color || '#fff' }}>
+                        {fromPlayer?.name || req.fromPlayerId}
+                      </span>
+                      <span className="text-gray-400 ml-1">请求联防</span>
+                    </span>
+                    <div className="flex gap-1">
+                      {onJointDefenseAccept && (
+                        <button
+                          onClick={() => onJointDefenseAccept(req.id)}
+                          className="text-[10px] px-1.5 py-0.5 bg-green-900/30 text-green-400 rounded hover:bg-green-900/50"
+                        >
+                          接受
+                        </button>
+                      )}
+                      {onJointDefenseReject && (
+                        <button
+                          onClick={() => onJointDefenseReject(req.id)}
+                          className="text-[10px] px-1.5 py-0.5 bg-red-900/30 text-red-400 rounded hover:bg-red-900/50"
+                        >
+                          拒绝
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {outgoingRequests.length > 0 && (
+          <div className="mb-2">
+            <div className="text-xs text-gray-500 font-semibold mb-1">📤 已发送请求</div>
+            <div className="space-y-1">
+              {outgoingRequests.map(req => {
+                const toPlayer = gameState.players[req.toPlayerId];
+                return (
+                  <div key={req.id} className="p-1.5 bg-gray-800/30 rounded text-xs flex items-center justify-between">
+                    <span>
+                      <span className="font-semibold" style={{ color: toPlayer?.color || '#fff' }}>
+                        {toPlayer?.name || req.toPlayerId}
+                      </span>
+                      <span className="text-gray-500 ml-1">等待确认</span>
+                    </span>
+                    {onJointDefenseReject && (
+                      <button
+                        onClick={() => onJointDefenseReject(req.id)}
+                        className="text-[10px] px-1.5 py-0.5 bg-gray-700 text-gray-400 rounded hover:bg-gray-600"
+                      >
+                        取消
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {onJointDefenseRequest && (
+          <button
+            onClick={() => setShowRequestModal(true)}
+            disabled={activeProtocolCount >= 2}
+            className={`w-full text-xs py-1.5 rounded-lg transition-colors ${
+              activeProtocolCount >= 2
+                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                : 'bg-cyan-900/30 text-cyan-400 hover:bg-cyan-900/50 border border-cyan-800/30'
+            }`}
+          >
+            {activeProtocolCount >= 2 ? '协议已满(2/2)' : '+ 发起联防请求'}
+          </button>
+        )}
+
+        {myProtocols.length === 0 && incomingRequests.length === 0 && outgoingRequests.length === 0 && (
+          <div className="text-center text-gray-500 text-xs py-1">
+            暂无联防协议
+          </div>
+        )}
+      </div>
+
+      {showRequestModal && onJointDefenseRequest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={() => setShowRequestModal(false)}>
+          <div className="panel rounded-xl p-4 max-w-xs w-full" onClick={e => e.stopPropagation()}>
+            <h4 className="text-sm font-bold text-cyan-400 mb-3">🤝 发起联防请求</h4>
+            {availablePlayers.length === 0 ? (
+              <div className="text-xs text-gray-500 text-center py-2">没有可签约的玩家</div>
+            ) : (
+              <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                {availablePlayers.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      onJointDefenseRequest(p.id);
+                      setShowRequestModal(false);
+                    }}
+                    className="w-full p-2 bg-gray-800/50 rounded-lg text-xs text-left hover:bg-gray-700/50 transition-colors flex items-center gap-2"
+                  >
+                    <div
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                      style={{ backgroundColor: p.color }}
+                    >
+                      {p.name.charAt(0)}
+                    </div>
+                    <span className="font-semibold">{p.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => setShowRequestModal(false)}
+              className="w-full mt-3 text-xs py-1.5 bg-gray-700 text-gray-400 rounded-lg hover:bg-gray-600"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="panel rounded-xl p-3">
         <h3 className="text-sm font-bold mb-2 text-gray-400">📜 历史灾害记录</h3>
         {history.length === 0 ? (
           <div className="text-center text-gray-500 text-xs py-2">
@@ -216,6 +510,7 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, o
           settlement={selectedHistory.settlement}
           onClose={() => setSelectedHistory(null)}
           title={`${DISASTER_CONFIG[selectedHistory.disasterType].name} · 历史记录 · 回合 ${selectedHistory.turn}`}
+          players={gameState.players}
         />
       )}
     </div>
@@ -226,9 +521,10 @@ interface SettlementModalProps {
   settlement: DisasterSettlement;
   onClose: () => void;
   title?: string;
+  players?: Record<string, Player>;
 }
 
-export const SettlementModal: React.FC<SettlementModalProps> = ({ settlement, onClose, title }) => {
+export const SettlementModal: React.FC<SettlementModalProps> = ({ settlement, onClose, title, players }) => {
   const config = DISASTER_CONFIG[settlement.disasterType];
 
   return (
@@ -301,9 +597,13 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({ settlement, on
             <div className="p-3 bg-green-900/20 border border-green-800/50 rounded-lg">
               <h4 className="text-green-400 font-semibold text-sm mb-2">🛡️ 防御成功</h4>
               {settlement.defenseSuccesses.map((d, i) => (
-                <div key={i} className="text-xs text-gray-300">
-                  {FACILITY_CONFIG[d.defenseType]?.icon} {FACILITY_CONFIG[d.defenseType]?.name}
+                <div key={i} className="text-xs text-gray-300 flex items-center gap-1">
+                  <span>{FACILITY_CONFIG[d.defenseType]?.icon}</span>
+                  <span>{FACILITY_CONFIG[d.defenseType]?.name}</span>
                   <span className="text-green-400 ml-1">吸收伤害 {d.damageAbsorbed}</span>
+                  {d.allyPlayerName && (
+                    <span className="text-cyan-400 ml-1">[联防协议·{d.allyPlayerName}]</span>
+                  )}
                 </div>
               ))}
             </div>

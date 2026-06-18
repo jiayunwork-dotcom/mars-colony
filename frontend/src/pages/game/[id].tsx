@@ -87,6 +87,8 @@ function deserializeGameState(data: any): GameState {
     tradeHistory: data?.tradeHistory || [],
     turnActions: data?.turnActions || {},
     playerTradeStats: data?.playerTradeStats || {},
+    jointDefenseProtocols: data?.jointDefenseProtocols || [],
+    pendingJointDefenseRequests: data?.pendingJointDefenseRequests || [],
   };
 }
 
@@ -148,11 +150,26 @@ export default function Game() {
       ]);
     };
 
+    const handleJointDefenseUpdated = (data: {
+      protocols: any[];
+      pendingRequests: any[];
+    }) => {
+      setGameState(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          jointDefenseProtocols: data.protocols,
+          pendingJointDefenseRequests: data.pendingRequests,
+        };
+      });
+    };
+
     on('turn:completed', handleTurnCompleted);
     on('turn:started', handleTurnStarted);
     on('chat:message', handleChatMessage);
     on('game:ended', handleGameEnded);
     on('player:disconnected', handlePlayerDisconnected);
+    on('joint_defense:updated', handleJointDefenseUpdated);
 
     emit('game:get-state', { roomId: id }, (response: any) => {
       if (response?.success) {
@@ -166,6 +183,7 @@ export default function Game() {
       off('chat:message', handleChatMessage);
       off('game:ended', handleGameEnded);
       off('player:disconnected', handlePlayerDisconnected);
+      off('joint_defense:updated', handleJointDefenseUpdated);
     };
   }, [id, connect, on, off, emit]);
 
@@ -239,6 +257,40 @@ export default function Game() {
 
   const handleSendMessage = useCallback((message: string) => {
     emit('chat:send', { message });
+  }, [emit]);
+
+  const handleJointDefenseRequest = useCallback((toPlayerId: string) => {
+    emit('joint_defense:request', { toPlayerId }, (response: any) => {
+      if (!response?.success) {
+        alert(response?.error || '联防请求发送失败');
+      }
+    });
+  }, [emit]);
+
+  const handleJointDefenseAccept = useCallback((requestId: string) => {
+    emit('joint_defense:accept', { requestId }, (response: any) => {
+      if (!response?.success) {
+        alert(response?.error || '接受联防请求失败');
+      }
+    });
+  }, [emit]);
+
+  const handleJointDefenseReject = useCallback((requestId: string) => {
+    emit('joint_defense:reject', { requestId }, (response: any) => {
+      if (!response?.success) {
+        alert(response?.error || '拒绝联防请求失败');
+      }
+    });
+  }, [emit]);
+
+  const handleJointDefenseTerminate = useCallback((protocolId: string) => {
+    if (confirm('确定要解除联防协议吗？')) {
+      emit('joint_defense:terminate', { protocolId }, (response: any) => {
+        if (!response?.success) {
+          alert(response?.error || '解约失败');
+        }
+      });
+    }
   }, [emit]);
 
   const handleLeaveGame = () => {
@@ -454,6 +506,10 @@ export default function Game() {
                 onSettlementClose={handleSettlementClose}
                 showDefenseOverlay={showDefenseOverlay}
                 onToggleDefenseOverlay={setShowDefenseOverlay}
+                onJointDefenseRequest={handleJointDefenseRequest}
+                onJointDefenseAccept={handleJointDefenseAccept}
+                onJointDefenseReject={handleJointDefenseReject}
+                onJointDefenseTerminate={handleJointDefenseTerminate}
               />
             )}
 
@@ -475,6 +531,7 @@ export default function Game() {
         <SettlementModal
           settlement={gameState.pendingSettlement}
           onClose={handleSettlementClose}
+          players={gameState.players}
         />
       )}
 

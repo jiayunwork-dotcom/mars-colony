@@ -12,6 +12,7 @@ import {
 } from '../types/game';
 import { DISASTER_CONFIG, BASE_WARNING_TURNS, FACILITY_CONFIG } from './constants';
 import { getTilesWithinRadius, coordKey, hexDistance } from './hexGrid';
+import { isJointDefenseActive } from './jointDefense';
 
 export function calculateSatelliteWarningBonus(state: GameState): number {
   let rawBonus = 0;
@@ -131,11 +132,15 @@ function estimateLosses(
 }
 
 function isTileShielded(state: GameState, coord: HexCoord): boolean {
-  for (const tile of state.map.tiles.values()) {
-    if (tile.facility?.type === 'shield_generator' && !tile.facility.isDisabled && tile.facility.durability > 0) {
+  const tile = state.map.tiles.get(coordKey(coord));
+  const tileOwner = tile?.ownerId;
+
+  for (const sTile of state.map.tiles.values()) {
+    if (sTile.facility?.type === 'shield_generator' && !sTile.facility.isDisabled && sTile.facility.durability > 0) {
       const radius = FACILITY_CONFIG.shield_generator.shieldRadius || 1;
-      if (hexDistance(tile.coord, coord) <= radius) {
-        return true;
+      if (hexDistance(sTile.coord, coord) <= radius) {
+        if (sTile.ownerId === tileOwner) return true;
+        if (tileOwner && sTile.ownerId && isJointDefenseActive(state, tileOwner, sTile.ownerId)) return true;
       }
     }
   }
@@ -308,17 +313,26 @@ function applySingleDisaster(state: GameState, disaster: ActiveDisaster): Disast
         if (sTile.facility?.type === 'shield_generator' && !sTile.facility.isDisabled && sTile.facility.durability > 0) {
           const radius = FACILITY_CONFIG.shield_generator.shieldRadius || 1;
           if (hexDistance(sTile.coord, coord) <= radius) {
-            const durabilityLoss = 20;
-            sTile.facility.durability = Math.max(0, sTile.facility.durability - durabilityLoss);
-            settlement.defenseSuccesses.push({
-              coord: sTile.coord,
-              defenseType: 'shield_generator',
-              damageAbsorbed: durabilityLoss,
-            });
-            if (sTile.facility.durability <= 0) {
-              sTile.facility = null;
+            const isOwnShield = sTile.ownerId === tile.ownerId;
+            const isAllyShield = !isOwnShield && tile.ownerId && sTile.ownerId && isJointDefenseActive(state, tile.ownerId, sTile.ownerId);
+            if (isOwnShield || isAllyShield) {
+              const durabilityLoss = 20;
+              sTile.facility.durability = Math.max(0, sTile.facility.durability - durabilityLoss);
+              const defenseEntry: any = {
+                coord: sTile.coord,
+                defenseType: 'shield_generator',
+                damageAbsorbed: durabilityLoss,
+              };
+              if (isAllyShield && sTile.ownerId) {
+                const allyPlayer = state.players[sTile.ownerId];
+                defenseEntry.allyPlayerName = allyPlayer?.name || sTile.ownerId;
+              }
+              settlement.defenseSuccesses.push(defenseEntry);
+              if (sTile.facility.durability <= 0) {
+                sTile.facility = null;
+              }
+              break;
             }
-            break;
           }
         }
       }
