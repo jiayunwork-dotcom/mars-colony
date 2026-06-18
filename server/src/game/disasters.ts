@@ -14,16 +14,16 @@ import { DISASTER_CONFIG, BASE_WARNING_TURNS, FACILITY_CONFIG } from './constant
 import { getTilesWithinRadius, coordKey, hexDistance } from './hexGrid';
 
 export function calculateSatelliteWarningBonus(state: GameState): number {
-  let bonus = 0;
+  let rawBonus = 0;
   let satelliteCount = 0;
   for (const tile of state.map.tiles.values()) {
     if (tile.facility?.type === 'weather_satellite' && !tile.facility.isDisabled) {
       satelliteCount++;
     }
   }
-  if (satelliteCount >= 1) bonus += 1;
-  if (satelliteCount >= 2) bonus += Math.floor(0.5);
-  return bonus;
+  if (satelliteCount >= 1) rawBonus += 1;
+  if (satelliteCount >= 2) rawBonus += 0.5;
+  return Math.floor(rawBonus);
 }
 
 export function getWarningLevel(turnsUntilArrival: number): WarningLevel {

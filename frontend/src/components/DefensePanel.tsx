@@ -1,5 +1,5 @@
-import React from 'react';
-import { GameState, Player, DisasterSettlement } from '../types/game';
+import React, { useState } from 'react';
+import { GameState, Player, DisasterSettlement, DisasterHistoryEntry } from '../types/game';
 import { DISASTER_CONFIG, WARNING_LEVEL_CONFIG, FACILITY_CONFIG, hexKey, hexDistance } from '../lib/gameConfig';
 
 interface DefensePanelProps {
@@ -14,6 +14,7 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, o
   const warnings = gameState.disasterWarnings;
   const activeDisasters = gameState.activeDisasters;
   const history = gameState.disasterHistory;
+  const [selectedHistory, setSelectedHistory] = useState<DisasterHistoryEntry | null>(null);
 
   const defenseFacilities = Object.values(gameState.map.tiles).filter(
     t => t.facility && FACILITY_CONFIG[t.facility.type]?.isDefense && t.ownerId === player.id
@@ -176,13 +177,18 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, o
               const config = DISASTER_CONFIG[entry.disasterType];
               const s = entry.settlement;
               return (
-                <div key={i} className="p-1.5 bg-gray-800/30 rounded text-xs">
+                <div
+                  key={i}
+                  className="p-1.5 bg-gray-800/30 rounded text-xs cursor-pointer hover:bg-gray-700/40 transition-colors"
+                  onClick={() => setSelectedHistory(entry)}
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1">
                       <span>{config.icon}</span>
                       <span className="font-semibold">{config.name}</span>
                       <span className="text-gray-500">回合{entry.turn}</span>
                     </div>
+                    <span className="text-gray-500 text-[10px]">🔍 点击查看</span>
                   </div>
                   <div className="flex gap-3 text-gray-500 mt-0.5">
                     {s.buildingsDestroyed.length > 0 && (
@@ -205,10 +211,11 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, o
         )}
       </div>
 
-      {gameState.pendingSettlement && (
+      {selectedHistory && (
         <SettlementModal
-          settlement={gameState.pendingSettlement}
-          onClose={onSettlementClose || (() => {})}
+          settlement={selectedHistory.settlement}
+          onClose={() => setSelectedHistory(null)}
+          title={`${DISASTER_CONFIG[selectedHistory.disasterType].name} · 历史记录 · 回合 ${selectedHistory.turn}`}
         />
       )}
     </div>
@@ -218,13 +225,14 @@ export const DefensePanel: React.FC<DefensePanelProps> = ({ gameState, player, o
 interface SettlementModalProps {
   settlement: DisasterSettlement;
   onClose: () => void;
+  title?: string;
 }
 
-export const SettlementModal: React.FC<SettlementModalProps> = ({ settlement, onClose }) => {
+export const SettlementModal: React.FC<SettlementModalProps> = ({ settlement, onClose, title }) => {
   const config = DISASTER_CONFIG[settlement.disasterType];
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4" onClick={onClose}>
       <div
         className="panel rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
@@ -232,9 +240,9 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({ settlement, on
         <div className="text-center mb-4">
           <div className="text-4xl mb-2">{config.icon}</div>
           <h2 className="text-2xl font-bold" style={{ color: config.color }}>
-            {config.name} 灾害结算
+            {title || `${config.name} 灾害结算`}
           </h2>
-          <p className="text-gray-400 text-sm mt-1">回合 {settlement.turn}</p>
+          {!title && <p className="text-gray-400 text-sm mt-1">回合 {settlement.turn}</p>}
         </div>
 
         <div className="space-y-3">
